@@ -4,7 +4,7 @@ Every release of NexoLLM, newest first. Versions follow [Semantic Versioning](ht
 NexoLLM is in beta: until 1.0 a minor version (0.x.0) can change behavior, a patch (0.x.y) only fixes things.
 The build number in parentheses grows with every commit.
 
-## [Unreleased]
+## [0.7.0] - 2026-11-10
 
 ### Audio Context
 Listens to the room and to call audio (Zoom, Meet, Teams, browser videos) and uses what's said as context.
