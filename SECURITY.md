@@ -6,7 +6,7 @@ seriously and answered first.
 ## Reporting a vulnerability
 
 Please don't open a public issue. Use GitHub's private reporting instead:
-**Security → Report a vulnerability** on https://github.com/EdoQueloBelo/NexoLLM/security/advisories/new
+**Security → Report a vulnerability** on https://github.com/edevscomp/NexoLLM/security/advisories/new
 
 Include the NexoLLM version (Settings → About), your macOS version and the steps to reproduce.
 You'll get an answer within a few days.

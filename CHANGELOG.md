@@ -4,6 +4,113 @@ Every release of NexoLLM, newest first. Versions follow [Semantic Versioning](ht
 NexoLLM is in beta: until 1.0 a minor version (0.x.0) can change behavior, a patch (0.x.y) only fixes things.
 The build number in parentheses grows with every commit.
 
+## [Unreleased]
+
+### Audio Context
+Listens to the room and to call audio (Zoom, Meet, Teams, browser videos) and uses what's said as context.
+A high-pass filter, consonant pre-emphasis and automatic gain pick up a voice two meters away in an echoey
+room. **Auto** switches between Italian and English on its own when the speaker changes language. High
+sensitivity (Apple's speech service, on by default) can be turned off to keep all audio on the Mac. ⌃⌥M →
+Audio Context starts/stops listening and picks the language; Mind → Awareness shows a live transcript.
+
+### Smart Web Lookup (⌃⌥L)
+Highlighted text anywhere is looked up at once; with nothing highlighted, a search bar opens (drag on screen
+to read an area). Typos are fixed before searching, sources follow the language you search in, idioms get
+their figurative meaning (built-in dictionary + Wikiquote usage examples) and questions get the latest news
+with a quick summary. The card has a Copy button.
+
+### Writing tools
+Improve, Fix Grammar, Make Formal, Make Shorter and Translate use the whole paragraph, keep your language
+(even for a single word like "xciao" → "ciao" with the app in English) and never mix English into Italian.
+A rewrite is cancelled if the text changes while it's being written.
+
+### Whole-screen context
+⌃⌥S reads every window on screen and keeps the parts that match what you're writing; Awareness shows what
+was read.
+
+### Security
+Passwords copied from password managers are never read. Paste-based insertion restores the whole clipboard
+(images and files included) and is hidden from clipboard history apps. Lookup cards open only web links,
+at most 300 characters of selected text are sent to search engines, and updates download only over HTTPS
+from GitHub.
+
+### Fixes
+The model freed after inactivity reloads on demand for lookups, rewrites, alternatives and synonyms.
+Closing the lookup bar no longer cancels the answer. The quick menu opens at the caret in a text field and
+at the mouse elsewhere, with arrow-key navigation and hover highlight.
+
+## [0.6.0] - 2026-11-03
+
+### Rewrite selected text
+Select a sentence anywhere and press ⌃⌥M: Improve Writing, Fix Grammar, Make Formal, Make Shorter and
+Translate IT ⇄ EN replace it in place. Best with a cloud provider; the local model works as a fallback.
+
+### Privacy Inspector
+Mind → Awareness shows exactly what NexoLLM holds in memory right now: the text read from the screen,
+nearby window fields and the clipboard, with Clear Now. While the screen is being read, the menu bar
+icon turns into a viewfinder.
+
+### Playground
+Overview has a box to try NexoLLM right away: Tab, the full-suggestion key, alternatives and the menu all
+work there, and nothing typed in it is saved.
+
+### Look and sound
+Optional: a quiet tap when you accept, suggestions tinted with the accent color, and suggestion opacity.
+All off by default (Engine → Behavior).
+
+### Fixes
+Suggestions could turn invisible while Tab still accepted them; they now always stay opaque. ⌥Tab and
+⌃⌥M no longer get stuck after a cancelled request, and ⌃⌥M also works with NexoLLM's window in front.
+⌘Q, ⌘W, copy and paste work in NexoLLM's window, which now shows its menu bar while open. Every picker
+and dropdown uses the same outlined style as the buttons.
+
+### Releases
+Public builds are signed with a Developer ID certificate and notarized by Apple when one is set up.
+
+## [0.5.0] - 2026-11-03
+
+### Alternatives and synonyms
+The list opens the moment you press the key and fills in as soon as the results are ready. ← and →
+switch between Word and Phrase; switching back is instant. Alternatives now look only at what you're
+writing, so labels like "Draft" or app names no longer show up in the list.
+
+### Suggestions
+Nothing is suggested on top of an empty field's placeholder. When there's no room after the cursor, the
+suggestion appears below the line instead of disappearing.
+
+### Cloud API
+A key is checked before it's kept. A key the provider refuses is removed, and NexoLLM keeps using the
+model on your Mac until a key works.
+
+### Interface
+New outlined buttons and switches that light up when you point at them or reach them with the
+keyboard. The ⌃⌥M menu shows what NexoLLM is doing on its own line, and "Open NexoLLM" replaces
+"Settings". Insights shows words written, suggestions accepted, time saved and your top apps.
+Memory & Style has a Clear Cache button.
+
+## [0.4.0] - 2026-11-02
+
+### Lists
+Use ↑ and ↓ to move through alternatives, synonyms and emoji, then Return or Tab to insert. Numbers and
+clicks still work.
+
+### Quick menu
+⌃⌥M opens a new menu at the cursor. Move with the arrow keys, press a number or click. Escape closes it.
+
+### Models
+Five more models to download: Qwen 2.5 7B, Mistral 7B, Qwen 2.5 3B, SmolLM2 1.7B and Llama 3.2 1B. They
+are listed in one menu instead of a long list. Cloud models are picked from a menu, and a key is checked
+as soon as you save it.
+
+### Privacy
+Text with a password, API key, card number or IBAN is never saved. The encryption key is cleared from
+memory when the screen locks. Logs no longer contain anything you type. About → Privacy explains what
+NexoLLM stores and where it connects.
+
+### About
+Report a Bug and What's New now open inside the app. NexoLLM checks GitHub once a day for a new version
+(you can turn this off) and downloads it for you.
+
 ## [0.3.0] - 2026-10-30
 
 ### Better suggestions

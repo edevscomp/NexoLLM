@@ -9,11 +9,11 @@ Runs a local model on Apple Silicon, or the API you already pay for.
 
 <br>
 
-<a href="https://github.com/EdoQueloBelo/NexoLLM/releases/latest/download/NexoLLM.dmg"><img src="https://img.shields.io/badge/Download_for_macOS-5A6BF2?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS" height="36"></a>
+<a href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM.dmg"><img src="https://img.shields.io/badge/Download_for_macOS-5A6BF2?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS" height="36"></a>
 
 <br><br>
 
-<img src="https://img.shields.io/github/v/release/EdoQueloBelo/NexoLLM?style=flat-square&label=version&color=5A6BF2" alt="Latest version">
+<img src="https://img.shields.io/github/v/release/edevscomp/NexoLLM?style=flat-square&label=version&color=5A6BF2" alt="Latest version">
 <img src="https://img.shields.io/badge/macOS-14%2B-1f2328?style=flat-square" alt="macOS 14 or later">
 <img src="https://img.shields.io/badge/Apple_Silicon-native-1f2328?style=flat-square" alt="Apple Silicon">
 <img src="https://img.shields.io/badge/status-beta-F29E33?style=flat-square" alt="Beta">
@@ -84,7 +84,7 @@ the menu right at the cursor.
 
 ## Install
 
-1. Download [NexoLLM.dmg](https://github.com/EdoQueloBelo/NexoLLM/releases/latest/download/NexoLLM.dmg) and drag NexoLLM to Applications.
+1. Download [NexoLLM.dmg](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM.dmg) and drag NexoLLM to Applications.
 2. The beta isn't notarized yet. The first time, right-click the app and choose **Open**.
 3. Allow **Accessibility** when asked. Screen Recording is optional.
 4. Open **Settings → Engine → Models** and click **Use Recommended**. NexoLLM picks models that fit your Mac's memory and downloads them.
@@ -126,14 +126,15 @@ With a cloud key, suggestions come from the provider you choose. Keys stay in yo
 
 ## Privacy
 
-With a local model nothing leaves your Mac: no account, no analytics, no network. Your writing history and
+With a local model nothing you write leaves your Mac: no account, no analytics. Web Lookup, Audio Context (with
+High sensitivity) and the daily update check use the network only for what they do. Your writing history and
 memory are encrypted with a key kept in the Keychain, and password fields are never read. In cloud mode
 the text around the cursor goes to the provider you picked, and only to them. Details in
 [PRIVACY.md](PRIVACY.md).
 
 ## Feedback
 
-NexoLLM is in beta. If a suggestion is wrong or something breaks, [open an issue](https://github.com/EdoQueloBelo/NexoLLM/issues/new/choose)
+NexoLLM is in beta. If a suggestion is wrong or something breaks, [open an issue](https://github.com/edevscomp/NexoLLM/issues/new/choose)
 and say which app you were in. Release notes are in the [changelog](CHANGELOG.md).
 
 ## License
