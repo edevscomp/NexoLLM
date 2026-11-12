@@ -45,7 +45,7 @@
   <circle cx="60" cy="280" r="4" fill="white" fill-opacity="0.28"/>
   <text x="74" y="284" fill="#9DA6BE" font-family="Segoe UI Variable, Inter, sans-serif" font-size="12.5">3. Install &amp; Launch</text>
 
-  <text x="52" y="424" fill="#68718A" font-family="Segoe UI Variable, Inter, sans-serif" font-size="11">v0.9.0 · Ed25519 Signed · GPL-3.0</text>
+  <text x="52" y="424" fill="#68718A" font-family="Segoe UI Variable, Inter, sans-serif" font-size="11">v0.9.1 · Ed25519 Signed · GPL-3.0</text>
 
   <!-- Main Setup Content Area -->
   <text x="294" y="76" fill="white" font-family="Segoe UI Variable, Inter, sans-serif" font-size="24" font-weight="700">Install NexoLLM on your PC</text>

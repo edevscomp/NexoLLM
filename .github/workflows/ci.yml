@@ -14,7 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  macos:
+    name: macOS Build & Tests
     runs-on: macos-15
     timeout-minutes: 30
     permissions:
@@ -36,3 +37,51 @@ jobs:
         run: swift build -c release -Xswiftc -gnone
       - name: Test
         run: swift test
+
+  linux:
+    name: Linux Build & Core Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK & WebKitGTK system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libssl-dev pkg-config build-essential
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: platforms
+      - name: Run shared nexollm-core unit tests
+        working-directory: platforms
+        run: cargo test -p nexollm-core
+      - name: Build Linux desktop host & platform crate
+        working-directory: platforms
+        run: cargo build --release --workspace
+      - name: Self-test compiled Linux binary
+        run: ./platforms/target/release/nexollm-desktop --selftest
+
+  windows:
+    name: Windows 10/11 Build & Core Tests
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: platforms
+      - name: Run shared nexollm-core unit tests
+        working-directory: platforms
+        run: cargo test -p nexollm-core
+      - name: Build Windows desktop host & platform crate
+        working-directory: platforms
+        run: cargo build --release --workspace
+      - name: Self-test compiled Windows binary
+        run: .\platforms\target\release\nexollm-desktop.exe --selftest

@@ -175,6 +175,8 @@ struct StackedPastelHistogram: View {
     let buckets: [StackedBucket]
     let grouping: StatisticsPane.Grouping
     let palette: AppPalette
+    /// Used by `--render-ui` to showcase the hover tooltip on a specific column index without affecting runtime state.
+    static var previewHoverBucketIndex: Int? = nil
     @State private var hover: HoverKey?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -248,16 +250,20 @@ struct StackedPastelHistogram: View {
                 }
 
                 // Tooltip.
-                if let hover, let bIdx = buckets.firstIndex(where: { $0.date == hover.date }),
-                   let seg = buckets[bIdx].segments.first(where: { $0.app == hover.app }) {
+                let activeHover: HoverKey? = hover ?? Self.previewHoverBucketIndex.flatMap { idx in
+                    guard buckets.indices.contains(idx), let topSeg = buckets[idx].segments.first else { return nil }
+                    return HoverKey(date: buckets[idx].date, app: topSeg.app)
+                }
+                if let activeHover, let bIdx = buckets.firstIndex(where: { $0.date == activeHover.date }),
+                   let seg = buckets[bIdx].segments.first(where: { $0.app == activeHover.app }) {
                     let b = buckets[bIdx]
-                    let below = b.segments.prefix { $0.app != hover.app }.reduce(0) { $0 + $1.words }
+                    let below = b.segments.prefix { $0.app != activeHover.app }.reduce(0) { $0 + $1.words }
                     let segTop = plotH - plotH * CGFloat(below + seg.words) / CGFloat(scale)
                     let x = axisWidth + slot * (CGFloat(bIdx) + 0.5)
                     HistogramTooltip(app: seg.app, words: seg.words, period: tooltipPeriod(b.date), color: palette.color(seg.app))
                         .fixedSize()
                         .position(x: min(max(x, 90), geo.size.width - 90), y: max(30, segTop - 34))
-                        .id(hover.date.timeIntervalSince1970.description + hover.app)
+                        .id(activeHover.date.timeIntervalSince1970.description + activeHover.app)
                         .transition(.opacity.combined(with: .offset(y: 3)))
                         .allowsHitTesting(false)
                         .zIndex(10)

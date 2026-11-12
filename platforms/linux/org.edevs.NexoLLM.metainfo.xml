@@ -29,6 +29,7 @@
   <url type="bugtracker">https://github.com/edevscomp/NexoLLM/issues</url>
   <launchable type="desktop-id">nexollm.desktop</launchable>
   <releases>
+    <release version="0.9.1" date="2026-11-12"/>
     <release version="0.9.0" date="2026-11-11"/>
   </releases>
   <content_rating type="oars-1.1"/>

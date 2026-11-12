@@ -836,7 +836,7 @@ struct LookupCardView: View {
     @State private var copied = false
 
     /// Summary + key points as plain text, for the Copy button.
-    static func copyText(_ card: WebLookup.ResultCard) -> String {
+    nonisolated static func copyText(_ card: WebLookup.ResultCard) -> String {
         ([card.summary] + card.bullets.map { "• " + $0 }).joined(separator: "\n")
     }
 

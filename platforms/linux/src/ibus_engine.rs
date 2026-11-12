@@ -61,7 +61,7 @@ impl IbusEngineState {
   <name>org.edevs.NexoLLM</name>
   <description>NexoLLM On-Device Writing Assistant</description>
   <exec>{libexec_path}/nexollm-ibus --ibus</exec>
-  <version>0.9.0</version>
+  <version>0.9.1</version>
   <author>EdevS</author>
   <license>GPL-3.0-only</license>
   <engines>

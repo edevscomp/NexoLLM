@@ -1,22 +1,9 @@
 import SwiftUI
 
-// Scenes rendered by `--render-ui` for the public README: real NexoLLM views inside a macOS window frame,
-// on a soft backdrop, in light and dark.
+// Scenes rendered by `--render-ui` for the public README: real NexoLLM views on clean,
+// OS-neutral translucent panes ready to be composited over a desktop wallpaper (scripts/readme_media.py).
 
-/// macOS window controls.
-struct TrafficLights: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach([Color(red: 1.0, green: 0.37, blue: 0.34), Color(red: 1.0, green: 0.74, blue: 0.18),
-                     Color(red: 0.16, green: 0.78, blue: 0.25)], id: \.self) { c in
-                Circle().fill(c).frame(width: 12, height: 12)
-                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
-            }
-        }
-    }
-}
-
-/// A window with rounded corners, a hairline, a shadow and the traffic lights, on a gradient backdrop.
+/// Clean OS-neutral window frame (no OS-specific traffic lights) on a subtle backdrop.
 struct ShowcaseFrame<Content: View>: View {
     let size: CGSize
     var title: String? = nil
@@ -32,12 +19,11 @@ struct ShowcaseFrame<Content: View>: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             content
                 .frame(width: size.width, height: size.height)
-                .overlay(alignment: .topLeading) { TrafficLights().padding(.leading, 16).padding(.top, 10) }
                 .overlay(alignment: .top) {
-                    if let title { Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary).padding(.top, 8) }
+                    if let title { Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.secondary).padding(.top, 10) }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Color.primary.opacity(dark ? 0.16 : 0.09), lineWidth: 1))
                 .shadow(color: .black.opacity(dark ? 0.55 : 0.18), radius: 32, y: 18)
         }
@@ -45,15 +31,54 @@ struct ShowcaseFrame<Content: View>: View {
     }
 }
 
+/// Semi-transparent panel surface used by `scripts/readme_media.py` so the frosted desktop wallpaper shines through.
+struct FrostedPanelSurface<Content: View>: View {
+    var title: String? = nil
+    var badge: String? = nil
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if title != nil || badge != nil {
+                HStack(spacing: 8) {
+                    if let title {
+                        Text(title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let badge {
+                        Text(badge)
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.78))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule(style: .continuous).fill(Theme.accent.opacity(0.24)))
+                            .overlay(Capsule(style: .continuous).strokeBorder(Theme.accent.opacity(0.45), lineWidth: 0.75))
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+                Divider().opacity(0.35)
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(red: 0.08, green: 0.09, blue: 0.13).opacity(0.42))
+    }
+}
+
 /// A mail draft with a suggestion after the caret: what NexoLLM looks like in use.
 struct HeroScene: View {
     var showAlternatives = false
+    var translucent = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let dark = scheme == .dark
         VStack(alignment: .leading, spacing: 0) {
-            Color.clear.frame(height: 38)
+            Color.clear.frame(height: translucent ? 10 : 38)
             field("To", "Alex Morgan")
             field("Subject", "Launch plan, final draft")
             VStack(alignment: .leading, spacing: 12) {
@@ -85,7 +110,7 @@ struct HeroScene: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(translucent ? Color.clear : Color(nsColor: .textBackgroundColor))
     }
 
     private func field(_ label: String, _ value: String) -> some View {
@@ -101,8 +126,148 @@ struct HeroScene: View {
     }
 }
 
+/// Animated 90-frame sequence for `live.gif`: live typing -> inline ghost -> `Tab` word commit -> `⇧Tab` rest -> `⌥Tab` alternatives.
+struct LiveDemoScene: View {
+    let frame: Int
+
+    private static let basePrefix = "Thanks for sending the final draft over. I'll go through"
+    private static let typedTail = " it"
+
+    var body: some View {
+        let state = Self.frameState(frame)
+        FrostedPanelSurface(title: "Mail — Launch plan, final draft", badge: state.keyBadge) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 16) {
+                    HStack(spacing: 5) {
+                        Text("To:").foregroundStyle(.secondary)
+                        Text("Alex Morgan")
+                    }
+                    Text("·").foregroundStyle(.tertiary)
+                    HStack(spacing: 5) {
+                        Text("Subject:").foregroundStyle(.secondary)
+                        Text("Launch plan, final draft")
+                    }
+                }
+                .font(.system(size: 12.5))
+                .padding(.bottom, 4)
+
+                Text("Hi Alex,")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.primary)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("The timeline looks solid and the budget section reads much better now.")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.primary)
+
+                    HStack(spacing: 0) {
+                        Text(state.committedLine)
+                            .font(.system(size: 15))
+                            .foregroundStyle(.primary)
+                        Rectangle()
+                            .fill(Theme.accent.opacity(state.cursorVisible ? 1.0 : 0.25))
+                            .frame(width: 2, height: 18)
+                        if let ghost = state.ghost, let head = state.ghostHead {
+                            InlineGhostView(text: ghost, fontSize: 15, keyLabel: state.ghostKey, head: head, tone: .dark)
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if let altSelected = state.altIndex {
+                            ListPanelView(
+                                header: "Alternatives",
+                                items: ["on Thursday", "tomorrow morning", "this afternoon", "after standup"].map {
+                                    ListItem(leading: "", title: $0)
+                                },
+                                scope: .phrase,
+                                selected: altSelected
+                            )
+                            .fixedSize()
+                            .offset(x: 340, y: 24)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+        }
+    }
+
+    struct StateSnapshot {
+        var committedLine: String
+        var ghost: String?
+        var ghostHead: String?
+        var ghostKey: String = "⇥"
+        var keyBadge: String
+        var altIndex: Int? = nil
+        var cursorVisible: Bool = true
+    }
+
+    static func frameState(_ f: Int) -> StateSnapshot {
+        let typingTarget = "I'll review it"
+        if f < 20 {
+            let count = min(typingTarget.count, max(1, (f + 1) * typingTarget.count / 19))
+            let sub = String(typingTarget.prefix(count))
+            return StateSnapshot(committedLine: sub, ghost: nil, ghostHead: nil, keyBadge: "On-device · Gemma 4")
+        } else if f < 34 {
+            return StateSnapshot(
+                committedLine: "I'll review it",
+                ghost: " tonight and send my notes",
+                ghostHead: " tonight",
+                ghostKey: "⇥",
+                keyBadge: "Suggestion ready"
+            )
+        } else if f < 46 {
+            return StateSnapshot(
+                committedLine: "I'll review it tonight",
+                ghost: " and send my notes",
+                ghostHead: " and",
+                ghostKey: "⇧⇥",
+                keyBadge: "Tab · accepted next word"
+            )
+        } else if f < 56 {
+            return StateSnapshot(
+                committedLine: "I'll review it tonight and send my notes.",
+                ghost: nil,
+                ghostHead: nil,
+                keyBadge: "⇧Tab · accepted phrase"
+            )
+        } else if f < 66 {
+            let extra = " Let's sync "
+            let c = min(extra.count, (f - 55) * extra.count / 9)
+            let showGhost = c == extra.count
+            return StateSnapshot(
+                committedLine: "I'll review it tonight and send my notes." + String(extra.prefix(c)),
+                ghost: showGhost ? "tomorrow morning" : nil,
+                ghostHead: showGhost ? "tomorrow" : nil,
+                keyBadge: "Typing…"
+            )
+        } else if f < 78 {
+            let sel = f < 72 ? 1 : 0
+            return StateSnapshot(
+                committedLine: "I'll review it tonight and send my notes. Let's sync ",
+                ghost: nil,
+                ghostHead: nil,
+                keyBadge: "⌥Tab · alternatives",
+                altIndex: sel
+            )
+        } else {
+            let blink = (f / 4) % 2 == 0
+            return StateSnapshot(
+                committedLine: "I'll review it tonight and send my notes. Let's sync on Thursday.",
+                ghost: nil,
+                ghostHead: nil,
+                keyBadge: "Return · inserted choice",
+                cursorVisible: blink
+            )
+        }
+    }
+}
+
 /// A notes window with the ⌃⌥M quick menu open at the caret, Writing Tools expanded.
 struct QuickMenuScene: View {
+    var translucent = false
+
     var body: some View {
         let tools: [QuickMenuItem] = [
             QuickMenuItem(symbol: "wand.and.stars", title: "Improve Writing"),
@@ -117,11 +282,11 @@ struct QuickMenuScene: View {
             QuickMenuItem(symbol: "pause.circle", title: "Pause Suggestions…", subitems: [QuickMenuItem(symbol: "timer", title: "Pause 10m")]),
             QuickMenuItem(symbol: "sparkle.magnifyingglass", title: "Smart Web Lookup", badge: "⌃⌥L"),
             QuickMenuItem(symbol: "text.viewfinder", title: "Read the Screen Now", badge: "⌃⌥S"),
-            QuickMenuItem(symbol: "waveform", title: "Audio Context", badge: "On · EN",
+            QuickMenuItem(symbol: "waveform", title: "Audio Context", badge: "On · Auto",
                           subitems: [QuickMenuItem(symbol: "checkmark", title: "Automatic (Multilingual)")]),
         ]
         VStack(alignment: .leading, spacing: 10) {
-            Color.clear.frame(height: 30)
+            Color.clear.frame(height: translucent ? 14 : 30)
             Text("Weekly update").font(.system(size: 20, weight: .bold))
             Text("hi team, the beta went out on monday and feedback has been great so far. we fixed the sync issue and the new onboarding is almost done")
                 .font(.system(size: 14)).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
@@ -130,17 +295,19 @@ struct QuickMenuScene: View {
         }
         .padding(.horizontal, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(translucent ? Color.clear : Color(nsColor: .textBackgroundColor))
         .overlay(alignment: .topLeading) {
             QuickMenuView(status: "Ready · Gemma 4 E4B", words: 1284, items: items, selected: 0, expandedIndex: 0, selectedSubIndex: 1)
                 .fixedSize()
-                .offset(x: 250, y: 128)
+                .offset(x: 228, y: translucent ? 96 : 128)
         }
     }
 }
 
-/// A web page with a highlighted idiom and the ⌃⌥L lookup card next to it.
+/// A document/browser pane with a highlighted idiom and the ⌃⌥L lookup card next to it.
 struct LookupScene: View {
+    var translucent = false
+
     var body: some View {
         let card = WebLookup.ResultCard(
             query: "bite the bullet", isDefinition: true,
@@ -151,7 +318,7 @@ struct LookupScene: View {
             sources: [WebLookup.SourceItem(title: "Wiktionary", source: "Wiktionary", url: URL(string: "https://en.wiktionary.org")!),
                       WebLookup.SourceItem(title: "Wikiquote", source: "Wikiquote", url: URL(string: "https://en.wikiquote.org")!)])
         VStack(alignment: .leading, spacing: 10) {
-            Color.clear.frame(height: 30)
+            Color.clear.frame(height: translucent ? 14 : 30)
             Text("Moving on").font(.system(size: 20, weight: .bold))
             (Text("After months of delays, the team decided to ")
              + Text("bite the bullet").foregroundColor(.primary).bold()
@@ -161,11 +328,11 @@ struct LookupScene: View {
         }
         .padding(.horizontal, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(translucent ? Color.clear : Color(nsColor: .textBackgroundColor))
         .overlay(alignment: .topLeading) {
             LookupCardView(query: "bite the bullet", card: card, onSelectArea: {}, onAskQuestion: nil)
                 .fixedSize(horizontal: false, vertical: true)
-                .offset(x: 170, y: 104)
+                .offset(x: 150, y: translucent ? 86 : 104)
         }
     }
 }

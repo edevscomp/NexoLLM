@@ -20,6 +20,11 @@ let package = Package(
                 .linkedFramework("Carbon"),
             ]
         ),
-        .testTarget(name: "NexoLLMTests", dependencies: ["NexoLLM"], path: "Tests/NexoLLMTests"),
+        .testTarget(
+            name: "NexoLLMTests",
+            dependencies: ["NexoLLM"],
+            path: "Tests/NexoLLMTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

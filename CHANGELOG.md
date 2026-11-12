@@ -4,6 +4,13 @@ Every release of NexoLLM, newest first. Versions follow [Semantic Versioning](ht
 NexoLLM is in early-stage development: until 1.0 a minor version (0.x.0) can refine behavior, and a patch (0.x.y) only fixes things.
 The build number in parentheses grows with every commit.
 
+## [0.9.1] - 2026-11-12
+
+### Direct installers for Windows, Linux and macOS
+- Published native desktop installers for all three operating systems on GitHub Releases: **Windows 10/11** (`NexoLLM-windows-x64-setup.exe`), **Linux** (`NexoLLM-linux-x86_64.AppImage` and `NexoLLM-linux-amd64.deb`), and **macOS** (`NexoLLM-macos.dmg`), eliminating duplicate release archives.
+- Upgraded the macOS `.dmg` builder to write deterministic binary `.DS_Store` icon-view, window bounds and Retina Aurora/Glass background records directly without requiring Finder AppleScript automation.
+- Added `@MainActor` test isolation annotations and aligned Swift target settings so automated CI passes cleanly across Xcode 16.4 and newer toolchains.
+
 ## [0.9.0] - 2026-11-11
 
 ### Stacked pastel insights

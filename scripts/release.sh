@@ -3,9 +3,8 @@
 #   scripts/release.sh source     update the public repository with the current source (no build, no release)
 #   scripts/release.sh            build + sign dist/, update the public repository, create the GitHub release
 #
-# The public repository receives a snapshot of this repository's HEAD, minus the maintainer's working notes
-# (docs/dev/). Needs push access to PUBLIC_REMOTE and, for the release, the GitHub CLI and the release signing
-# key in the Keychain (scripts/release-signing.swift).
+# When the GitHub release is published, `.github/workflows/release.yml` automatically builds and attaches the
+# native Windows (.exe) and Linux (.AppImage, .deb) installers and updates SHA256SUMS.txt.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,11 +22,9 @@ publish_source() {
         git clone --quiet "$PUBLIC_REMOTE" "$WORK" 2>/dev/null || { git init --quiet -b main "$WORK"; git -C "$WORK" remote add origin "$PUBLIC_REMOTE"; }
     fi
     git -C "$WORK" pull --quiet --ff-only origin main 2>/dev/null || true
-    # Exact mirror of HEAD (deletions included), without the private notes.
     find "$WORK" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
     git archive HEAD | tar -x -C "$WORK"
     for p in "${PRIVATE[@]}"; do rm -rf "${WORK:?}/$p"; done
-    # Never publish anything that looks like a secret.
     if grep -rIl --exclude-dir=.git --exclude=WritingQualityTests.swift -E "BEGIN (RSA|EC|OPENSSH) PRIVATE KEY|NexoLLM Release Signing.*-w [A-Za-z0-9+/]{40}" "$WORK" >/dev/null; then
         echo "Refusing to publish: something that looks like a private key is in the snapshot." >&2; exit 1
     fi
@@ -44,6 +41,19 @@ publish_source() {
 }
 
 release_notes() {
+    cat <<EOF
+### Downloads
+
+| Operating System | Installer |
+| :--- | :--- |
+| **Windows 10 / 11 (64-bit)** | [**NexoLLM-windows-x64-setup.exe**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-windows-x64-setup.exe) |
+| **Linux (64-bit AppImage)** | [**NexoLLM-linux-x86_64.AppImage**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-linux-x86_64.AppImage) |
+| **Linux (Debian / Ubuntu .deb)** | [**NexoLLM-linux-amd64.deb**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-linux-amd64.deb) |
+| **macOS (64-bit .dmg)** | [**NexoLLM-macos.dmg**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-macos.dmg) |
+
+---
+
+EOF
     awk -v v="$VERSION" '
         $0 ~ "^## \\[" v "\\]" { on = 1; next }
         on && /^## \[/ { exit }
@@ -60,9 +70,10 @@ all)
     publish_source
     command -v gh >/dev/null || { echo "Install the GitHub CLI to create the release: brew install gh && gh auth login" >&2; exit 1; }
     notes="$(mktemp)"; release_notes > "$notes"
-    # A full (not pre-) release marked latest, so /releases/latest/download/NexoLLM.dmg resolves to it.
-    gh release create "v$VERSION" dist/NexoLLM.dmg dist/NexoLLM.dmg.sig dist/NexoLLM-"$VERSION".dmg dist/NexoLLM-"$VERSION".dmg.sig \
-        dist/NexoLLM-"$VERSION".zip dist/SHA256SUMS.txt \
+    gh release create "v$VERSION" \
+        dist/NexoLLM-macos.dmg \
+        dist/NexoLLM-macos.dmg.sig \
+        dist/SHA256SUMS.txt \
         --repo "$PUBLIC_REPO" --title "NexoLLM $VERSION" --notes-file "$notes" --latest
     rm -f "$notes"
     git tag -f "v$VERSION" >/dev/null

@@ -513,7 +513,7 @@
     <section class="hero">
       <div class="version-pill">
         <span class="version-dot"></span>
-        <span>Version 0.9.0 · GNU GPL v3 · 6 Active Languages</span>
+        <span>Version 0.9.1 · GNU GPL v3 · 6 Active Languages</span>
       </div>
       <h1 id="hero-title">Download NexoLLM for your computer</h1>
       <p class="hero-sub" id="hero-sub">
@@ -561,13 +561,13 @@
           <li>WASAPI Loopback + mic local Whisper STT</li>
         </ul>
 
-        <a class="btn-download" href="https://github.com/edevscomp/NexoLLM/releases/latest">
-          <span>Download Windows Installer (.msi)</span>
+        <a class="btn-download" href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-windows-x64-setup.exe">
+          <span>Download Windows Installer (.exe)</span>
         </a>
         <div class="alt-links">
           <span>Also available:</span>
           <span>
-            <a href="https://github.com/edevscomp/NexoLLM/releases/latest">.exe setup</a> ·
+            <a href="https://github.com/edevscomp/NexoLLM/releases/latest">Release notes</a> ·
             <a href="../MULTIPLATFORM.md">Build script</a>
           </span>
         </div>
@@ -585,14 +585,14 @@
           </div>
           <div>
             <div class="os-title">macOS Desktop</div>
-            <div class="os-arch">Universal 64-bit (.dmg &amp; .zip)</div>
+            <div class="os-arch">64-bit (.dmg)</div>
           </div>
         </div>
 
         <div class="installer-preview">
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-secondary);">
             <div class="win-dots"><span class="win-dot"></span><span class="win-dot"></span><span class="win-dot"></span></div>
-            <span>NexoLLM 0.9.0.dmg</span>
+            <span>NexoLLM-macos.dmg</span>
           </div>
           <div class="dmg-mock">
             <div class="dmg-well" style="background:rgba(90,107,242,0.18);">I=</div>
@@ -608,14 +608,14 @@
           <li>AES-256 encrypted style &amp; cross-app memory</li>
         </ul>
 
-        <a class="btn-download" href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM.dmg">
+        <a class="btn-download" href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-macos.dmg">
           <span>Download Installer (.dmg)</span>
         </a>
         <div class="alt-links">
-          <span>Direct archive:</span>
+          <span>Verification:</span>
           <span>
-            <a href="https://github.com/edevscomp/NexoLLM/releases/latest">.zip bundle</a> ·
-            <a href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM.dmg.sig">.dmg.sig</a>
+            <a href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-macos.dmg.sig">.dmg.sig</a> ·
+            <a href="https://github.com/edevscomp/NexoLLM/releases/latest/download/SHA256SUMS.txt">SHA256SUMS</a>
           </span>
         </div>
       </article>
@@ -632,7 +632,7 @@
           </div>
           <div>
             <div class="os-title">Linux Desktop</div>
-            <div class="os-arch">64-bit (AppImage · .deb · .rpm)</div>
+            <div class="os-arch">64-bit (AppImage &amp; .deb)</div>
           </div>
         </div>
 
@@ -644,7 +644,6 @@
           <div class="pkg-pills">
             <span class="pkg-pill">.AppImage</span>
             <span class="pkg-pill">.deb (Ubuntu/Debian)</span>
-            <span class="pkg-pill">.rpm (Fedora)</span>
           </div>
           <div style="font-size:10.5px;color:var(--text-secondary);">AT-SPI2 + IBus · PipeWire · Secret Service</div>
         </div>
@@ -655,14 +654,14 @@
           <li>PipeWire / PulseAudio monitor + mic STT</li>
         </ul>
 
-        <a class="btn-download" href="https://github.com/edevscomp/NexoLLM/releases/latest">
-          <span>Download AppImage / .deb / .rpm</span>
+        <a class="btn-download" href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-linux-x86_64.AppImage">
+          <span>Download Linux AppImage</span>
         </a>
         <div class="alt-links">
-          <span>Build from source:</span>
+          <span>Debian / Ubuntu:</span>
           <span>
-            <a href="../MULTIPLATFORM.md">build-linux.sh</a> ·
-            <a href="https://github.com/edevscomp/NexoLLM/releases/latest">SHA256SUMS</a>
+            <a href="https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-linux-amd64.deb">.deb package</a> ·
+            <a href="https://github.com/edevscomp/NexoLLM/releases/latest/download/SHA256SUMS.txt">SHA256SUMS</a>
           </span>
         </div>
       </article>
@@ -676,11 +675,11 @@
         </div>
         <div class="code-box">
           <span class="code-comment"># Windows (PowerShell)</span><br/>
-          Get-FileHash .\NexoLLM-Setup-x64.msi -Algorithm SHA256<br/><br/>
+          Get-FileHash .\NexoLLM-windows-x64-setup.exe -Algorithm SHA256<br/><br/>
           <span class="code-comment"># Linux</span><br/>
-          sha256sum NexoLLM-x86_64.AppImage<br/><br/>
+          sha256sum NexoLLM-linux-x86_64.AppImage<br/><br/>
           <span class="code-comment"># macOS</span><br/>
-          shasum -a 256 NexoLLM.dmg
+          shasum -a 256 NexoLLM-macos.dmg
         </div>
       </div>
 
@@ -699,6 +698,9 @@
     </section>
 
     <footer>
+      <div style="margin-bottom:14px;">
+        <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="edevs" data-color="#FFDD00" data-emoji="☕" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+      </div>
       NexoLLM · Free &amp; Open Source under <a href="../../LICENSE">GNU GPL v3.0</a> · Made by EdevS
     </footer>
   </div>

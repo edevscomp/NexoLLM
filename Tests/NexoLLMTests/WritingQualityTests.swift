@@ -157,6 +157,7 @@ final class WritingQualityTests: XCTestCase {
     // MARK: Overlays
 
     /// An overlay must never be on screen while transparent (Tab would accept a suggestion nobody sees).
+    @MainActor
     func testFloatingPanelNeverGoesTransparent() {
         let panel = FloatingPanel(clickThrough: true)
         let f = NSRect(x: 100, y: 100, width: 120, height: 24)
@@ -172,6 +173,7 @@ final class WritingQualityTests: XCTestCase {
     }
 
     /// ↑/↓ wrap around, and hiding always clears the list/menu so no later key is swallowed by a ghost.
+    @MainActor
     func testListAndQuickMenuNavigateAndDismissCleanly() {
         let rect = CGRect(x: 200, y: 200, width: 0, height: 16)
         let list = ListOverlay()

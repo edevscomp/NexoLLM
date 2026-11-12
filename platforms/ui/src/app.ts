@@ -207,7 +207,7 @@ function renderPane(): string {
       <div style="text-align:center; margin: 18px 0 22px;">
         <div class="brand-badge" style="width:64px;height:64px;border-radius:16px;font-size:26px;margin:0 auto 12px;">I=</div>
         <h1 style="margin-bottom:6px;">NexoLLM</h1>
-        <div class="metric-detail">Version 0.9.0</div>
+        <div class="metric-detail">Version 0.9.1</div>
         <p class="tagline" style="margin-top:8px;">${t("assistantTagline")}</p>
       </div>
       <div class="glass-card" style="margin-bottom:16px;">
@@ -218,7 +218,7 @@ function renderPane(): string {
         <div class="row">
           <div>
             <div class="row-title">Updates</div>
-            <div class="row-detail">Ed25519 offline signature verification · Version 0.9.0</div>
+            <div class="row-detail">Ed25519 offline signature verification · Version 0.9.1</div>
           </div>
           <button class="btn">Check for Updates</button>
         </div>

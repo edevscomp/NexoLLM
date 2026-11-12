@@ -92,25 +92,21 @@ dist)
     OUT="dist"
     rm -rf "$OUT" && mkdir -p "$OUT"
     chmod +x scripts/build-dmg.sh
-    ./scripts/build-dmg.sh "$APP" "$OUT/$NAME-$VERSION.dmg" "$NAME $VERSION" "$VERSION"
+    DMG_FILE="$NAME-macos.dmg"
+    ./scripts/build-dmg.sh "$APP" "$OUT/$DMG_FILE" "$NAME" "$VERSION"
     if [[ "$IDENTITY" != "-" ]]; then
-        codesign --force --timestamp --sign "$IDENTITY" "$OUT/$NAME-$VERSION.dmg"
+        codesign --force --timestamp --sign "$IDENTITY" "$OUT/$DMG_FILE"
         if [[ -n "${NOTARY_PROFILE:-}" ]]; then
             echo "Submitting to Apple's notary service (profile: $NOTARY_PROFILE)..."
-            xcrun notarytool submit "$OUT/$NAME-$VERSION.dmg" --keychain-profile "$NOTARY_PROFILE" --wait
-            xcrun stapler staple "$OUT/$NAME-$VERSION.dmg"
-            xcrun stapler staple "$APP"   # the zip below carries the ticket too
+            xcrun notarytool submit "$OUT/$DMG_FILE" --keychain-profile "$NOTARY_PROFILE" --wait
+            xcrun stapler staple "$OUT/$DMG_FILE"
         fi
     fi
-    ditto -c -k --keepParent "$APP" "$OUT/$NAME-$VERSION.zip"
-    cp "$OUT/$NAME-$VERSION.dmg" "$OUT/$NAME.dmg"   # stable name: /releases/latest/download/NexoLLM.dmg always works
-    (cd "$OUT" && shasum -a 256 "$NAME.dmg" "$NAME-$VERSION.dmg" "$NAME-$VERSION.zip" > SHA256SUMS.txt)
-    # Ed25519 signatures the app verifies before opening an update (key in the maintainer's Keychain).
+    (cd "$OUT" && shasum -a 256 "$DMG_FILE" > SHA256SUMS.txt)
+    # Ed25519 signature the app verifies before opening an update (key in the maintainer's Keychain).
     if [[ "${SKIP_SIGNING:-}" != "1" ]]; then
-        for F in "$NAME.dmg" "$NAME-$VERSION.dmg"; do
-            swift scripts/release-signing.swift sign "$OUT/$F" "$VERSION" > "$OUT/$F.sig"
-        done
-        echo "Signed: $(cat "$OUT/$NAME.dmg.sig")"
+        swift scripts/release-signing.swift sign "$OUT/$DMG_FILE" "$VERSION" > "$OUT/$DMG_FILE.sig"
+        echo "Signed: $(cat "$OUT/$DMG_FILE.sig")"
     fi
     echo "Release files in $OUT/:"
     cat "$OUT/SHA256SUMS.txt"

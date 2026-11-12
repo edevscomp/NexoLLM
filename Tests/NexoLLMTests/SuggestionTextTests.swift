@@ -567,6 +567,7 @@ final class SuggestionTextTests: XCTestCase {
         XCTAssertEqual(AudioContext.otherLocale("en-US"), "it-IT")
     }
 
+    @MainActor
     func testLookupCopyText() {
         let card = WebLookup.ResultCard(query: "q", isDefinition: true, summary: "Sunto.", bullets: ["uno", "due"], bulletTitle: "", sources: [])
         XCTAssertEqual(LookupCardView.copyText(card), "Sunto.\n• uno\n• due")
