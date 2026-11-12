@@ -33,7 +33,9 @@ publish_source() {
         echo "Public repository already up to date."
     else
         git -C "$WORK" -c user.name="$(git config user.name)" -c user.email="$(git config user.email)" \
-            commit --quiet -m "NexoLLM $VERSION"
+            commit --quiet -m "NexoLLM $VERSION" \
+            -m "Co-authored-by: Claude <noreply@anthropic.com>" \
+            -m "Co-authored-by: Gemini <gemini@google.com>"
         echo "Committed source snapshot for $VERSION."
     fi
     git -C "$WORK" push --quiet -u origin main
