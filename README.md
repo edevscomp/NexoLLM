@@ -57,13 +57,11 @@ The **Insights** view tracks words accepted with <kbd>Tab</kbd> and <kbd>⇧Tab<
 
 ## Install
 
-Download the latest signed installer for your operating system from [**GitHub Releases**](https://github.com/edevscomp/NexoLLM/releases/latest):
+Download the latest signed release from [**GitHub Releases**](https://github.com/edevscomp/NexoLLM/releases/latest):
 
-- **Windows 10 / 11 (64-bit)** — download [`NexoLLM-windows-x64-setup.exe`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-windows-x64-setup.exe) and run the installer.
-- **Linux (64-bit)** — download [`NexoLLM-linux-x86_64.AppImage`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-linux-x86_64.AppImage) (`chmod +x` and run) or [`NexoLLM-linux-amd64.deb`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-linux-amd64.deb) for Debian / Ubuntu.
-- **macOS (64-bit)** — download [`NexoLLM-macos.dmg`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-macos.dmg), drag **NexoLLM** to **Applications**, and grant Accessibility access when prompted.
+- **Download [`NexoLLM-macos.dmg`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-macos.dmg)**, drag **NexoLLM** to **Applications**, and grant Accessibility access when prompted.
 
-On first launch, the interactive tour helps pick and download a local model suited to your hardware. Prefer building from source? See [docs/BUILDING.md](docs/BUILDING.md) and [docs/MULTIPLATFORM.md](docs/MULTIPLATFORM.md).
+On first launch, the interactive tour helps pick and download a local model suited to your hardware. Prefer building from source? See [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Shortcuts
 

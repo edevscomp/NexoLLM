@@ -44,14 +44,9 @@ publish_source() {
 
 release_notes() {
     cat <<EOF
-### Downloads
+### Download
 
-| Operating System | Installer |
-| :--- | :--- |
-| **Windows 10 / 11 (64-bit)** | [**NexoLLM-windows-x64-setup.exe**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-windows-x64-setup.exe) |
-| **Linux (64-bit AppImage)** | [**NexoLLM-linux-x86_64.AppImage**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-linux-x86_64.AppImage) |
-| **Linux (Debian / Ubuntu .deb)** | [**NexoLLM-linux-amd64.deb**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-linux-amd64.deb) |
-| **macOS (64-bit .dmg)** | [**NexoLLM-macos.dmg**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-macos.dmg) |
+- [**NexoLLM-macos.dmg**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-macos.dmg)
 
 ---
 
