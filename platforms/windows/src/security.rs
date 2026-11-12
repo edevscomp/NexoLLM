@@ -11,10 +11,15 @@ pub enum DpapiError {
     Unsupported,
 }
 
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn LocalFree(hmem: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+}
+
 pub fn protect_user_secret(secret: &[u8]) -> Result<Vec<u8>, DpapiError> {
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::Foundation::LocalFree;
+        use windows::core::PCWSTR;
         use windows::Win32::Security::Cryptography::{
             CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
         };
@@ -24,10 +29,12 @@ pub fn protect_user_secret(secret: &[u8]) -> Result<Vec<u8>, DpapiError> {
                 pbData: secret.as_ptr() as *mut u8,
             };
             let mut out_blob = CRYPT_INTEGER_BLOB::default();
-            CryptProtectData(&in_blob, None, None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out_blob)
+            CryptProtectData(&in_blob, PCWSTR::null(), None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out_blob)
                 .map_err(|_| DpapiError::ProtectionFailed)?;
             let slice = std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize).to_vec();
-            let _ = LocalFree(windows::Win32::Foundation::HLOCAL(out_blob.pbData as *mut _));
+            if !out_blob.pbData.is_null() {
+                let _ = LocalFree(out_blob.pbData as *mut core::ffi::c_void);
+            }
             return Ok(slice);
         }
     }
@@ -41,7 +48,6 @@ pub fn protect_user_secret(secret: &[u8]) -> Result<Vec<u8>, DpapiError> {
 pub fn unprotect_user_secret(blob: &[u8]) -> Result<Vec<u8>, DpapiError> {
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::Foundation::LocalFree;
         use windows::Win32::Security::Cryptography::{
             CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
         };
@@ -54,7 +60,9 @@ pub fn unprotect_user_secret(blob: &[u8]) -> Result<Vec<u8>, DpapiError> {
             CryptUnprotectData(&in_blob, None, None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out_blob)
                 .map_err(|_| DpapiError::ProtectionFailed)?;
             let slice = std::slice::from_raw_parts(out_blob.pbData, out_blob.cbData as usize).to_vec();
-            let _ = LocalFree(windows::Win32::Foundation::HLOCAL(out_blob.pbData as *mut _));
+            if !out_blob.pbData.is_null() {
+                let _ = LocalFree(out_blob.pbData as *mut core::ffi::c_void);
+            }
             return Ok(slice);
         }
     }

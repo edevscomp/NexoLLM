@@ -279,11 +279,17 @@ enum Spelling {
         return miss.location == NSNotFound
     }
 
-    /// Known in the sentence's language, Italian, English, or in your own writing history.
+    /// Known in the sentence's language, Italian, English (including capitalized proper nouns typed in lowercase), or in your own writing history.
     private static func isKnown(_ word: String, language: String?) -> Bool {
         if isValid(word, language: language) { return true }
         if language?.hasPrefix("en") == false, isValid(word, language: "en") { return true }
         if language?.hasPrefix("it") == false, isValid(word, language: "it") { return true }
+        if word.first?.isLowercase == true {
+            let cap = word.prefix(1).uppercased() + word.dropFirst()
+            if isValid(cap, language: language) { return true }
+            if language?.hasPrefix("en") == false, isValid(cap, language: "en") { return true }
+            if language?.hasPrefix("it") == false, isValid(cap, language: "it") { return true }
+        }
         return History.shared.knows(word)
     }
 

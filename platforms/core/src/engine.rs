@@ -45,7 +45,7 @@ impl EngineState {
 }
 
 /// Curated GGUF model entry verified by SHA-256 before loading.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CatalogModel {
     pub id: &'static str,
     pub name: &'static str,
@@ -55,7 +55,7 @@ pub struct CatalogModel {
 }
 
 /// Optional downloadable Whisper model for the Audio Context plugin.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct WhisperCatalogModel {
     pub id: &'static str,
     pub name: &'static str,

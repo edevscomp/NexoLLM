@@ -82,7 +82,7 @@ impl Stats {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct PastelPair {
     pub light_hex: &'static str,
     pub dark_hex: &'static str,
@@ -148,7 +148,7 @@ pub enum Grouping {
     Month,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BucketSegment {
     pub app: String,
     pub words: u64,
@@ -156,7 +156,7 @@ pub struct BucketSegment {
     pub dark_hex: &'static str,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct StackedBucket {
     pub period_start: String,
     pub segments: Vec<BucketSegment>,
