@@ -163,11 +163,12 @@ jobs:
           set -euo pipefail
           TAG="${{ github.event.inputs.tag || github.event.release.tag_name }}"
           echo "Attaching Windows & Linux installers to release $TAG..."
+          REPO="${{ github.repository }}"
           cd release_upload
-          gh release download "$TAG" --pattern "NexoLLM-macos.dmg" --clobber || true
+          gh release download "$TAG" --repo "$REPO" --pattern "NexoLLM-macos.dmg" --clobber || true
           sha256sum NexoLLM-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
-          gh release upload "$TAG" \
+          gh release upload "$TAG" --repo "$REPO" \
             NexoLLM-windows-x64-setup.exe \
             NexoLLM-linux-x86_64.AppImage \
             NexoLLM-linux-amd64.deb \
