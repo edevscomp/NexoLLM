@@ -1,0 +1,19 @@
+[package]
+name = "nexollm-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Linux (X11 & Wayland) native integration for NexoLLM (AT-SPI2, IBus, PipeWire, Portal, libsecret)"
+
+[dependencies]
+nexollm-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "4.4"
+libc = "0.2"

@@ -1,0 +1,19 @@
+[package]
+name = "nexollm-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Tauri v2 desktop host bridging nexollm-core with Windows 10/11 and Linux native adapters"
+
+[dependencies]
+nexollm-core = { path = "../../core" }
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+nexollm-windows = { path = "../../windows" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nexollm-linux = { path = "../../linux" }

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="800" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#111422"/>
+      <stop offset="55%" stop-color="#181C30"/>
+      <stop offset="100%" stop-color="#121524"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.22" cy="0.2" r="0.45">
+      <stop offset="0%" stop-color="#5A6BF2" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#5A6BF2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.82" cy="0.78" r="0.42">
+      <stop offset="0%" stop-color="#4ECDC4" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#4ECDC4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="orb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7687FF"/>
+      <stop offset="100%" stop-color="#4957DF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="480" rx="22" fill="url(#bg)"/>
+  <rect width="800" height="480" rx="22" fill="url(#glow1)"/>
+  <rect width="800" height="480" rx="22" fill="url(#glow2)"/>
+  <rect x="1" y="1" width="798" height="478" rx="21" stroke="white" stroke-opacity="0.1"/>
+
+  <!-- Left Sidebar Banner for Windows MSI / NSIS Setup -->
+  <rect x="28" y="28" width="230" height="424" rx="18" fill="white" fill-opacity="0.04" stroke="white" stroke-opacity="0.08"/>
+  <rect x="52" y="56" width="52" height="52" rx="13" fill="url(#orb)"/>
+  <rect x="65" y="69" width="4" height="26" rx="2" fill="white"/>
+  <rect x="61" y="69" width="12" height="3.5" rx="1.75" fill="white"/>
+  <rect x="61" y="91.5" width="12" height="3.5" rx="1.75" fill="white"/>
+  <rect x="77" y="75" width="17" height="5.5" rx="2.75" fill="white" fill-opacity="0.48"/>
+  <rect x="77" y="84" width="11" height="5.5" rx="2.75" fill="white" fill-opacity="0.3"/>
+
+  <text x="52" y="138" fill="white" font-family="Segoe UI Variable, Inter, sans-serif" font-size="22" font-weight="700">NexoLLM</text>
+  <text x="52" y="160" fill="#9DA6BE" font-family="Segoe UI Variable, Inter, sans-serif" font-size="12.5">On-Device AI Assistant</text>
+
+  <circle cx="60" cy="212" r="4" fill="#5A6BF2"/>
+  <text x="74" y="216" fill="#D5DDF5" font-family="Segoe UI Variable, Inter, sans-serif" font-size="12.5" font-weight="600">1. Welcome &amp; License</text>
+
+  <circle cx="60" cy="246" r="4" fill="#4ECDC4"/>
+  <text x="74" y="250" fill="#D5DDF5" font-family="Segoe UI Variable, Inter, sans-serif" font-size="12.5" font-weight="600">2. GPU Runtime Check</text>
+
+  <circle cx="60" cy="280" r="4" fill="white" fill-opacity="0.28"/>
+  <text x="74" y="284" fill="#9DA6BE" font-family="Segoe UI Variable, Inter, sans-serif" font-size="12.5">3. Install &amp; Launch</text>
+
+  <text x="52" y="424" fill="#68718A" font-family="Segoe UI Variable, Inter, sans-serif" font-size="11">v0.9.0 · Ed25519 Signed · GPL-3.0</text>
+
+  <!-- Main Setup Content Area -->
+  <text x="294" y="76" fill="white" font-family="Segoe UI Variable, Inter, sans-serif" font-size="24" font-weight="700">Install NexoLLM on your PC</text>
+  <text x="294" y="102" fill="#9DA6BE" font-family="Segoe UI Variable, Inter, sans-serif" font-size="13.5">100% local autocomplete, writing tools and Whisper audio context.</text>
+
+  <rect x="294" y="130" width="468" height="86" rx="14" fill="white" fill-opacity="0.04" stroke="#5A6BF2" stroke-opacity="0.38"/>
+  <text x="316" y="160" fill="white" font-family="Segoe UI Variable, Inter, sans-serif" font-size="14" font-weight="600">Local GPU Acceleration (DirectML / Vulkan / CUDA)</text>
+  <text x="316" y="182" fill="#9DA6BE" font-family="Segoe UI Variable, Inter, sans-serif" font-size="12">Runs llama.cpp and whisper.cpp directly on your graphics card. Nothing leaves your PC.</text>
+
+  <rect x="294" y="232" width="468" height="86" rx="14" fill="white" fill-opacity="0.04" stroke="white" stroke-opacity="0.09"/>
+  <text x="316" y="262" fill="white" font-family="Segoe UI Variable, Inter, sans-serif" font-size="14" font-weight="600">AES-256 Encrypted Memory &amp; Credential Store</text>
+  <text x="316" y="284" fill="#9DA6BE" font-family="Segoe UI Variable, Inter, sans-serif" font-size="12">Your writing style and recent topics are encrypted locally with your system credential store.</text>
+
+  <!-- Bottom Action Bar -->
+  <rect x="634" y="404" width="128" height="38" rx="10" fill="#5A6BF2"/>
+  <text x="673" y="428" fill="white" font-family="Segoe UI Variable, Inter, sans-serif" font-size="13.5" font-weight="600">Install ›</text>
+</svg>

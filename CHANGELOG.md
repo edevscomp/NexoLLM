@@ -1,8 +1,64 @@
 # Changelog
 
 Every release of NexoLLM, newest first. Versions follow [Semantic Versioning](https://semver.org).
-NexoLLM is in beta: until 1.0 a minor version (0.x.0) can change behavior, a patch (0.x.y) only fixes things.
+NexoLLM is in early-stage development: until 1.0 a minor version (0.x.0) can refine behavior, and a patch (0.x.y) only fixes things.
 The build number in parentheses grows with every commit.
+
+## [0.9.0] - 2026-11-11
+
+### Stacked pastel insights
+Insights now breaks down accepted words per application inside a soft pastel stacked column histogram, with a compact total words summary in the top right and a smooth fade-in/fade-out tooltip showing each app and its exact word count on hover.
+
+### Six active languages everywhere
+English, Italiano, Español, Français, Deutsch and Português are now active across the entire interface, interactive Tour examples, Writing Tools, spell checking and local Whisper Speech-to-Text (`Automatic` multilingual detection plus explicit selection in Settings and `⌃⌥M`).
+
+### Cleaner interface & universal notices
+- Simplified **General** (`Web Lookup` only, removing redundant network toggles and duplicate update settings), **Setup**, **Models** and **About** with clean, device-neutral wording and an early-stage development note.
+- Updated the **Audio Context** notice to clear, universal, jurisdiction-neutral terms.
+- Adaptive wrapping layout in the interactive Tour prevents button and chip overflow across all languages.
+
+### Cross-platform architecture
+Added the shared `platforms/` workspace (`core`, `windows`, `linux`, `ui`) bringing the local `llama.cpp` + `whisper.cpp` architecture, Ed25519 signed updates and Aurora/Glass UI to Windows 10/11 and Linux.
+
+## [0.8.0] - 2026-11-11
+
+### Open source
+NexoLLM is now free software under the **GNU GPL v3**: the full source code is public, so anyone can check
+exactly what an app with Accessibility access does. The name and icon stay with the official builds
+(see TRADEMARKS.md).
+
+### Everything on this computer
+The cloud mode (OpenAI, Anthropic, Gemini, OpenRouter keys) is gone: every suggestion, rewrite, translation
+and summary is computed by the local model. API keys saved by older versions are deleted from the Keychain.
+New **Offline mode** (Settings → General) turns off every connection; Web Lookup can be turned off on its own.
+The privacy texts now say exactly what uses the network: downloads you start, the daily update check and
+Web Lookup when you press its shortcut.
+
+### Audio Context is now an on-device plugin
+Speech is transcribed by **Whisper** (whisper.cpp) on this computer's GPU: Apple's speech service is no longer
+used and no audio or text leaves the computer. The far-field filter (high-pass, consonant pre-emphasis,
+automatic gain) is unchanged; Italian ⇄ English is detected automatically on every phrase. The plugin isn't
+part of the app: it's installed from Settings → Context after reading a legal notice and agreeing to it
+(Whisper Large v3 Turbo, 547 MB, or Whisper Small, 190 MB), and can be removed at any time. Listening is always
+off at launch, the menu bar icon can't be hidden while it's on, and it stops by itself on screen lock, sleep or
+after an hour without typing; audio buffers are overwritten and the transcript is erased when it stops.
+
+### Signed updates
+Updates are verified before they're opened: each release carries an Ed25519 signature of its version and
+SHA-256, checked against a public key built into the app. A tampered download, a file swapped in transit or an
+older release passed off as new is deleted. All connections use TLS 1.2+, no cookies or cache, and redirects
+only to the expected hosts.
+
+### First-run fixes
+- Writing tools no longer contain sample biographies: a one-word text like "cao" becomes "Ciao" and is never
+  replaced by an invented sentence. A new guard rejects any answer that copies the prompt or runs far longer
+  than the original.
+- Short slips ("cao", "teh") are corrected; Fix Grammar expands chat shorthand ("nn", "cmq", "xke").
+- macOS inline predictions and macOS autocorrect each have a Turn Off / Turn On Again button, read back from
+  macOS so the status shown is the real one.
+- A fresh install shows "No model installed" (never a "model not found" error), and the live download progress
+  while the first model arrives.
+- A Web Lookup card closes when you click anywhere else once the answer is shown.
 
 ## [0.7.0] - 2026-11-10
 

@@ -1,0 +1,31 @@
+# Build output
+.build/
+build/
+dist/
+.showcase-repo/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Prebuilt llama.cpp (fetched by scripts/fetch-llama.sh)
+Vendor/
+
+# Models (several GB each) and other large binaries
+*.gguf
+*.bin
+*.zip
+
+# Local data that must never be published
+*.log
+history.bin
+memory.bin
+.env
+
+# macOS
+.DS_Store
+
+# Signing key backups and keys (the release key lives only in the Keychain)
+*.backup
+*.pem
+*.key

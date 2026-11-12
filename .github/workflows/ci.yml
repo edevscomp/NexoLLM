@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cache llama.cpp and whisper.cpp frameworks
+        uses: actions/cache@v4
+        with:
+          path: Vendor
+          key: ggml-${{ hashFiles('scripts/fetch-llama.sh', 'scripts/fetch-whisper.sh') }}
+      - name: Fetch llama.cpp and whisper.cpp (pinned, SHA-256 verified)
+        run: |
+          test -d Vendor/build-apple/llama.xcframework || scripts/fetch-llama.sh
+          test -d Vendor/whisper/build-apple/whisper.xcframework || scripts/fetch-whisper.sh
+      - name: Build
+        run: swift build -c release -Xswiftc -gnone
+      - name: Test
+        run: swift test
