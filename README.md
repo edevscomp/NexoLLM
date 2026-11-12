@@ -59,7 +59,8 @@ The **Insights** view tracks words accepted with <kbd>Tab</kbd> and <kbd>⇧Tab<
 
 Download the latest signed release from [**GitHub Releases**](https://github.com/edevscomp/NexoLLM/releases/latest):
 
-- **Download [`NexoLLM-macos.dmg`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-macos.dmg)**, drag **NexoLLM** to **Applications**, and grant Accessibility access when prompted.
+- **Desktop Installer (`.dmg`)** — download [`NexoLLM-macos.dmg`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-macos.dmg), drag **NexoLLM** to **Applications**, and grant Accessibility access when prompted.
+- **Windows & Linux** — *Work in progress (currently in active development).*
 
 On first launch, the interactive tour helps pick and download a local model suited to your hardware. Prefer building from source? See [docs/BUILDING.md](docs/BUILDING.md).
 

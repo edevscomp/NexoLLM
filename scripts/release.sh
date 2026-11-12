@@ -46,7 +46,8 @@ release_notes() {
     cat <<EOF
 ### Download
 
-- [**NexoLLM-macos.dmg**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-macos.dmg)
+- **Installer (`.dmg`):** [**NexoLLM-macos.dmg**](https://github.com/$PUBLIC_REPO/releases/download/v$VERSION/NexoLLM-macos.dmg)
+- **Windows & Linux:** *Work in progress (currently in active development).*
 
 ---
 

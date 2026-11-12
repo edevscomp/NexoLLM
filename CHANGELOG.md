@@ -6,9 +6,10 @@ The build number in parentheses grows with every commit.
 
 ## [0.9.1] - 2026-11-12
 
-### Direct installers for Windows, Linux and macOS
-- Published native desktop installers for all three operating systems on GitHub Releases: **Windows 10/11** (`NexoLLM-windows-x64-setup.exe`), **Linux** (`NexoLLM-linux-x86_64.AppImage` and `NexoLLM-linux-amd64.deb`), and **macOS** (`NexoLLM-macos.dmg`), eliminating duplicate release archives.
-- Upgraded the macOS `.dmg` builder to write deterministic binary `.DS_Store` icon-view, window bounds and Retina Aurora/Glass background records directly without requiring Finder AppleScript automation.
+### Polished installer, UI & contributors
+- Upgraded the `.dmg` installer builder to write native bookmark records (`pBBk`) and deterministic binary `.DS_Store` icon-view, window bounds and Retina Aurora/Glass background records directly for macOS 26 Tahoe+.
+- Fixed modal scrollbar dragging in **About** so scrolling inside **What's New**, **Privacy & License** and **Report a Bug** never drags the application window.
+- Enabled the **Cancel** button in **Report a Bug** even when the text field is empty, and added **Claude** and **Gemini** to **Contributors**.
 - Added `@MainActor` test isolation annotations and aligned Swift target settings so automated CI passes cleanly across Xcode 16.4 and newer toolchains.
 
 ## [0.9.0] - 2026-11-11
@@ -23,9 +24,6 @@ English, Italiano, Español, Français, Deutsch and Português are now active ac
 - Simplified **General** (`Web Lookup` only, removing redundant network toggles and duplicate update settings), **Setup**, **Models** and **About** with clean, device-neutral wording and an early-stage development note.
 - Updated the **Audio Context** notice to clear, universal, jurisdiction-neutral terms.
 - Adaptive wrapping layout in the interactive Tour prevents button and chip overflow across all languages.
-
-### Cross-platform architecture
-Added the shared `platforms/` workspace (`core`, `windows`, `linux`, `ui`) bringing the local `llama.cpp` + `whisper.cpp` architecture, Ed25519 signed updates and Aurora/Glass UI to Windows 10/11 and Linux.
 
 ## [0.8.0] - 2026-11-11
 
