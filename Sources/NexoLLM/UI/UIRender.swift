@@ -45,7 +45,7 @@ enum UIRender {
 
         // If NEXO_DEMO_ONLY=1, render only the 90-frame live animation + frosted panels for scripts/readme-media.sh
         if let nStr = ProcessInfo.processInfo.environment["NEXO_DEMO_FRAMES"], let total = Int(nStr), total > 0 {
-            let demoSize = NSSize(width: 760, height: 325)
+            let demoSize = NSSize(width: 760, height: 356)
             let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -6000, y: -6000), size: demoSize),
                                   styleMask: [.borderless], backing: .buffered, defer: false)
             window.isOpaque = false

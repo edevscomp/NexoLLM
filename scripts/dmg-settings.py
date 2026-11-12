@@ -7,7 +7,7 @@ import os.path
 app_path = defines["app"]
 app_name = os.path.basename(app_path)
 
-format = "UDZO"
+format = defines.get("format", "UDRW")
 compression_level = 9
 filesystem = "HFS+"
 size = None

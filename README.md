@@ -1,11 +1,13 @@
-<div align="center">
-<img src="showcase/assets/icon.png" width="112" height="112" alt="NexoLLM icon">
-<h1>NexoLLM</h1>
-<p>Inline autocomplete, writing tools and instant answers for every app on your computer.<br>
-100% on-device AI. Private, open source, and out of your way.</p>
-<p><a href="https://github.com/edevscomp/NexoLLM/releases/latest">Download</a> · <a href="#install">Install</a> · <a href="docs/download/index.html">Windows · Linux · macOS</a></p>
-<img src="showcase/assets/live.gif" width="780" alt="NexoLLM suggesting words inline as you type, accepting with Tab and choosing alternatives">
-</div>
+<p align="center"><img src="showcase/assets/icon.png" width="112" height="112" alt="NexoLLM icon"></p>
+<h1 align="center">NexoLLM</h1>
+<p align="center">Inline autocomplete, writing tools and instant answers for every app on your computer.<br>100% on-device AI. Private, open source, and out of your way.</p>
+<p align="center">
+  <a href="https://github.com/edevscomp/NexoLLM/releases/latest">Download</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#shortcuts">Shortcuts</a>
+</p>
+
+<p align="center"><img src="showcase/assets/live.gif" width="760" alt="NexoLLM suggesting words inline as you type, accepting with Tab and choosing alternatives"></p>
 
 ## What it does
 
@@ -55,7 +57,7 @@ The **Insights** view tracks words accepted with <kbd>Tab</kbd> and <kbd>⇧Tab<
 
 ## Install
 
-Download the latest signed installer for your operating system from [**Releases**](https://github.com/edevscomp/NexoLLM/releases/latest) (or open the interactive [**Download Hub**](docs/download/index.html)):
+Download the latest signed installer for your operating system from [**GitHub Releases**](https://github.com/edevscomp/NexoLLM/releases/latest):
 
 - **Windows 10 / 11 (64-bit)** — download [`NexoLLM-windows-x64-setup.exe`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-windows-x64-setup.exe) and run the installer.
 - **Linux (64-bit)** — download [`NexoLLM-linux-x86_64.AppImage`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-linux-x86_64.AppImage) (`chmod +x` and run) or [`NexoLLM-linux-amd64.deb`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-linux-amd64.deb) for Debian / Ubuntu.

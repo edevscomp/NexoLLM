@@ -92,15 +92,18 @@ if len(demo_frames) > 1:
         shot = base.copy()
         place(shot, Image.open(path).convert("RGBA"), pad_x, pad_y, radius=30, glass_blend=0.62)
         shots.append(shot.resize((shot.width // 2, shot.height // 2), Image.LANCZOS))
-    # Build palette with FASTOCTREE so both crisp UI text and smooth aurora gradients preserve rich tones
-    ref_idx = min(72, len(shots) - 1)
-    palette = shots[ref_idx].quantize(colors=256, method=Image.FASTOCTREE, dither=Image.NONE)
+    # Build a 255-color MEDIANCUT palette (leaving index 255 for GIF89a transparency) from key states
+    sample_indices = [0, min(18, len(shots) - 1), min(42, len(shots) - 1)]
+    strip = Image.new("RGB", (shots[0].width, shots[0].height * len(sample_indices)))
+    for i, idx in enumerate(sample_indices):
+        strip.paste(shots[idx], (0, i * shots[0].height))
+    palette = strip.quantize(colors=255, method=Image.MEDIANCUT, dither=Image.NONE)
     stills = [shot.quantize(palette=palette, dither=Image.NONE) for shot in shots]
     stills[0].save(
         out_dir / "live.gif",
         save_all=True,
         append_images=stills[1:],
-        duration=66,
+        duration=60,
         loop=0,
         optimize=False,
     )

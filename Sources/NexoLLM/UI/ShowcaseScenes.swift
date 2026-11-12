@@ -126,15 +126,15 @@ struct HeroScene: View {
     }
 }
 
-/// Animated 90-frame sequence for `live.gif`: live typing -> inline ghost -> `Tab` word commit -> `⇧Tab` rest -> `⌥Tab` alternatives.
+/// Animated 72-frame sequence for `live.gif`: inline ghost -> `Tab` word commit -> `⇧Tab` phrase -> `⌥Tab` alternatives -> `Return` insert.
 struct LiveDemoScene: View {
     let frame: Int
-
-    private static let basePrefix = "Thanks for sending the final draft over. I'll go through"
-    private static let typedTail = " it"
+    static let totalFrames = 72
 
     var body: some View {
         let state = Self.frameState(frame)
+        let caretPulse = 0.62 + 0.38 * (0.5 + 0.5 * sin(Double(frame) * 0.48))
+        let progress = CGFloat(frame + 1) / CGFloat(Self.totalFrames)
         FrostedPanelSurface(title: "Mail — Launch plan, final draft", badge: state.keyBadge) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 16) {
@@ -146,6 +146,15 @@ struct LiveDemoScene: View {
                     HStack(spacing: 5) {
                         Text("Subject:").foregroundStyle(.secondary)
                         Text("Launch plan, final draft")
+                    }
+                    Spacer()
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(Color.green.opacity(caretPulse))
+                            .frame(width: 6, height: 6)
+                        Text("Local · 18 ms")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .font(.system(size: 12.5))
@@ -165,7 +174,7 @@ struct LiveDemoScene: View {
                             .font(.system(size: 15))
                             .foregroundStyle(.primary)
                         Rectangle()
-                            .fill(Theme.accent.opacity(state.cursorVisible ? 1.0 : 0.25))
+                            .fill(Theme.accent.opacity(state.cursorVisible ? caretPulse : 0.22))
                             .frame(width: 2, height: 18)
                         if let ghost = state.ghost, let head = state.ghostHead {
                             InlineGhostView(text: ghost, fontSize: 15, keyLabel: state.ghostKey, head: head, tone: .dark)
@@ -187,11 +196,53 @@ struct LiveDemoScene: View {
                     }
                 }
                 Spacer(minLength: 0)
+
+                // Subtle bottom HUD bar showing the active keystroke and timeline progress
+                VStack(spacing: 7) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(Self.steps.enumerated()), id: \.offset) { idx, item in
+                            let active = idx == state.activeStep
+                            HStack(spacing: 5) {
+                                Text(item.key)
+                                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(active ? Theme.accent : Color.white.opacity(0.10)))
+                                    .foregroundStyle(active ? Color.white : Color.white.opacity(0.65))
+                                Text(item.label)
+                                    .font(.system(size: 11, weight: active ? .semibold : .regular))
+                                    .foregroundStyle(active ? Color.white.opacity(0.92) : Color.white.opacity(0.45))
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule(style: .continuous)
+                                .fill(active ? Theme.accent.opacity(0.20) : Color.white.opacity(0.03)))
+                        }
+                        Spacer()
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.07))
+                            Capsule().fill(Theme.accent.opacity(0.65))
+                                .frame(width: max(8, geo.size.width * progress))
+                        }
+                    }
+                    .frame(height: 3)
+                }
+                .padding(.bottom, 12)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
         }
     }
+
+    private static let steps: [(key: String, label: String)] = [
+        ("⇥", "Next word"),
+        ("⇧⇥", "Full phrase"),
+        ("⌥⇥", "Alternatives"),
+        ("↩", "Insert"),
+    ]
 
     struct StateSnapshot {
         var committedLine: String
@@ -199,66 +250,72 @@ struct LiveDemoScene: View {
         var ghostHead: String?
         var ghostKey: String = "⇥"
         var keyBadge: String
+        var activeStep: Int = 0
         var altIndex: Int? = nil
         var cursorVisible: Bool = true
     }
 
     static func frameState(_ f: Int) -> StateSnapshot {
-        let typingTarget = "I'll review it"
-        if f < 20 {
-            let count = min(typingTarget.count, max(1, (f + 1) * typingTarget.count / 19))
-            let sub = String(typingTarget.prefix(count))
-            return StateSnapshot(committedLine: sub, ghost: nil, ghostHead: nil, keyBadge: "On-device · Gemma 4")
-        } else if f < 34 {
+        if f < 14 {
+            // Starts immediately with an active inline ghost suggestion on Frame 0!
             return StateSnapshot(
                 committedLine: "I'll review it",
                 ghost: " tonight and send my notes",
                 ghostHead: " tonight",
                 ghostKey: "⇥",
-                keyBadge: "Suggestion ready"
+                keyBadge: "⇥ Tab · accept next word",
+                activeStep: 0
             )
-        } else if f < 46 {
+        } else if f < 26 {
             return StateSnapshot(
                 committedLine: "I'll review it tonight",
                 ghost: " and send my notes",
                 ghostHead: " and",
                 ghostKey: "⇧⇥",
-                keyBadge: "Tab · accepted next word"
+                keyBadge: "⇧Tab · accept full phrase",
+                activeStep: 1
             )
-        } else if f < 56 {
-            return StateSnapshot(
-                committedLine: "I'll review it tonight and send my notes.",
-                ghost: nil,
-                ghostHead: nil,
-                keyBadge: "⇧Tab · accepted phrase"
-            )
-        } else if f < 66 {
+        } else if f < 36 {
             let extra = " Let's sync "
-            let c = min(extra.count, (f - 55) * extra.count / 9)
+            let c = min(extra.count, max(0, (f - 26) * extra.count / 6))
             let showGhost = c == extra.count
             return StateSnapshot(
                 committedLine: "I'll review it tonight and send my notes." + String(extra.prefix(c)),
                 ghost: showGhost ? "tomorrow morning" : nil,
                 ghostHead: showGhost ? "tomorrow" : nil,
-                keyBadge: "Typing…"
+                ghostKey: "⇥",
+                keyBadge: showGhost ? "Suggestion ready" : "Typing…",
+                activeStep: 1
             )
-        } else if f < 78 {
-            let sel = f < 72 ? 1 : 0
+        } else if f < 56 {
+            let sel = f < 46 ? 1 : 0
             return StateSnapshot(
                 committedLine: "I'll review it tonight and send my notes. Let's sync ",
                 ghost: nil,
                 ghostHead: nil,
-                keyBadge: "⌥Tab · alternatives",
+                keyBadge: "⌥Tab · browse alternatives",
+                activeStep: 2,
                 altIndex: sel
             )
-        } else {
-            let blink = (f / 4) % 2 == 0
+        } else if f < 66 {
             return StateSnapshot(
                 committedLine: "I'll review it tonight and send my notes. Let's sync on Thursday.",
                 ghost: nil,
                 ghostHead: nil,
                 keyBadge: "Return · inserted choice",
-                cursorVisible: blink
+                activeStep: 3,
+                cursorVisible: (f / 2) % 2 == 0
+            )
+        } else {
+            let typingTarget = "I'll review it"
+            let count = min(typingTarget.count, max(4, (f - 65) * typingTarget.count / 6))
+            return StateSnapshot(
+                committedLine: String(typingTarget.prefix(count)),
+                ghost: count == typingTarget.count ? " tonight and send my notes" : nil,
+                ghostHead: count == typingTarget.count ? " tonight" : nil,
+                ghostKey: "⇥",
+                keyBadge: "On-device · Gemma 4",
+                activeStep: 0
             )
         }
     }

@@ -10,7 +10,7 @@ BIN="build/NexoLLM.app/Contents/MacOS/NexoLLM"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-NEXO_DEMO_FRAMES=90 NEXO_FAST_MEDIA=1 "$BIN" --render-ui "$WORK" dark >/dev/null 2>&1 || true
+NEXO_DEMO_FRAMES=72 NEXO_FAST_MEDIA=1 "$BIN" --render-ui "$WORK" dark >/dev/null 2>&1 || true
 
 python3 scripts/readme_media.py "$WORK" showcase/assets
 cp build/NexoLLM.app/Contents/Resources/AppIcon.icns /tmp/nexo_icon.icns
