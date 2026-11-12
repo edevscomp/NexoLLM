@@ -10,6 +10,9 @@ on:
         required: true
         type: string
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
@@ -38,7 +41,13 @@ jobs:
           python -c "from PIL import Image; im = Image.open('showcase/assets/icon.png').convert('RGBA'); im.save('NexoLLM.ico', sizes=[(256,256),(64,64),(48,48),(32,32),(16,16)])"
           .\platforms\target\release\nexollm-desktop.exe --selftest
           $Makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
-          & $Makensis "-DVERSION=$Ver" "-DBIN_PATH=$PWD\platforms\target\release\nexollm-desktop.exe" "-DICON_FILE=$PWD\NexoLLM.ico" "-DOUTFILE=$PWD\artifacts\NexoLLM-windows-x64-setup.exe" "$PWD\platforms\windows\installer.nsi"
+          if (-not (Test-Path $Makensis)) {
+            choco install nsis -y --no-progress
+          }
+          if (-not (Test-Path $Makensis)) {
+            $Makensis = (Get-Command makensis.exe -ErrorAction Stop).Source
+          }
+          & $Makensis "/DVERSION=$Ver" "/DBIN_PATH=$PWD\platforms\target\release\nexollm-desktop.exe" "/DICON_FILE=$PWD\NexoLLM.ico" "/DOUTFILE=$PWD\artifacts\NexoLLM-windows-x64-setup.exe" "$PWD\platforms\windows\installer.nsi"
           Get-Item artifacts\NexoLLM-windows-x64-setup.exe
       - uses: actions/upload-artifact@v4
         with:
