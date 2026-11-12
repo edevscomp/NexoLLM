@@ -412,7 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             w.title = Brand.name
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             w.collectionBehavior = [.fullScreenPrimary]
-            w.isMovableByWindowBackground = true
+            w.isMovableByWindowBackground = false
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden   // the brand lives in the sidebar
             w.setContentSize(NSSize(width: 980, height: 700))

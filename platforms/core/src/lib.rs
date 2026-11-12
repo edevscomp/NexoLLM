@@ -69,6 +69,8 @@ mod tests {
         for lang in i18n::Language::ALL {
             let rendered = i18n::tr(lang, "Downloading {0}…", "Download di {0}…", &["Gemma 4"]);
             assert!(rendered.contains("Gemma 4"));
+            let contrib = i18n::tr(lang, "Contributors: {0}", "Contributors: {0}", &["EdevS · Claude · Gemini"]);
+            assert!(contrib.contains("Claude") && contrib.contains("Gemini"));
             let notice = i18n::UniversalAudioNotice::for_language(lang);
             assert!(!notice.your_responsibility.to_lowercase().contains("gdpr"));
             assert!(!notice.your_responsibility.to_lowercase().contains("615-bis"));

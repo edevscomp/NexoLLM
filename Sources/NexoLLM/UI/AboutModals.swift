@@ -34,6 +34,7 @@ struct ModalHost: View {
             .fixedSize(horizontal: false, vertical: tour)   // the tour card follows each slide's height
             .frame(maxHeight: tour ? nil : 540)
             .padding(26)
+            .background(ModalDragBlocker())
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.regularMaterial))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
             .shadow(color: .black.opacity(0.38), radius: 36, y: 16)
@@ -42,6 +43,15 @@ struct ModalHost: View {
             .transition(.scale(scale: 0.94).combined(with: .opacity))
         }
     }
+}
+
+/// Prevents AppKit window-drag hit-testing inside modal cards and their ScrollViews/NSScrollers.
+private struct ModalDragBlocker: NSViewRepresentable {
+    final class NonDraggableView: NSView {
+        override var mouseDownCanMoveWindow: Bool { false }
+    }
+    func makeNSView(context: Context) -> NSView { NonDraggableView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 private func close() { ModalCenter.shared.current = nil }
@@ -151,18 +161,21 @@ private struct BugReportCard: View {
             if includeSystem {
                 Text(systemInfo).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
             }
+            let isEmptyReport = details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             HStack {
                 Button(L("Cancel", "Annulla"), action: close)
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(L("Save…", "Salva…"), action: save)
+                    .disabled(isEmptyReport)
                 Button(copied ? L("Copied", "Copiato") : L("Copy Report", "Copia resoconto")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(report, forType: .string)
                     copied = true
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(isEmptyReport)
             }
-            .disabled(details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 

@@ -4,6 +4,7 @@ import Foundation
 enum Brand {
     static let name = "NexoLLM"
     static let author = "EdevS"
+    static let contributors = "EdevS · Claude · Gemini"
     static let bundleID = "com.edevs.NexoLLM"
     /// Source code (GPL-3.0), releases and issues.
     static let website = URL(string: "https://github.com/edevscomp/NexoLLM")!

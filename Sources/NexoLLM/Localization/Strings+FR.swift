@@ -528,6 +528,7 @@ let stringsFR: [String: String] = [
     "Looks for a new version on GitHub once a day. Nothing else is sent.": "Recherche une nouvelle version sur GitHub une fois par jour. Rien d'autre n'est envoyé.",
     "Support the project · Buy Me a Coffee": "Soutenir le projet · Buy Me a Coffee",
     "Made by {0}. Free and open source (GNU GPL v3).": "Créé par {0}. Gratuit et open source (GNU GPL v3).",
+    "Contributors: {0}": "Contributeurs : {0}",
     "Third-party notices": "Mentions de tiers",
     "Offline · requires Wi-Fi": "Hors ligne · Wi-Fi requis",
     "Version {0} is available": "La version {0} est disponible",

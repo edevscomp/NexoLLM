@@ -519,6 +519,7 @@ struct SettingsRootView: View {
         .padding(.top, 8)
         .padding(.bottom, 4)
         .frame(height: 38)
+        .background(WindowTitlebarDragArea())
     }
 
     private func select(_ t: SettingsTab) {
@@ -689,4 +690,16 @@ private struct EngineChip: View {
         .help(Fmt.status(status.engine))
         .onReceive(NotificationCenter.default.publisher(for: Power.changed)) { _ in onBattery = Power.onBattery }
     }
+}
+
+/// Restricts window-dragging to the top titlebar strip so dragging scrollbars, sliders, or text inside panes/modals never moves the window.
+private struct WindowTitlebarDragArea: NSViewRepresentable {
+    final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
+    }
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

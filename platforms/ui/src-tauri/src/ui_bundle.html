@@ -464,6 +464,9 @@ const UI_STRINGS                                           = {
     audioConsentTitle: "Audio Context — Privacy & Responsibility",
     audioResp: "Capturing or transcribing other people's voices may be subject to privacy and consent rules. Use this feature only for your own voice, for public content, when participants are informed and consent, or when you have appropriate authorization. Never use it to capture private conversations covertly.",
     skip: "Skip", back: "Back", next: "Next", finish: "Start Using NexoLLM",
+    contributors: "Contributors: EdevS · Claude · Gemini",
+    madeBy: "Made by EdevS. Free and open source (GNU GPL v3).",
+    reportBug: "Report a Bug", cancel: "Cancel", copyReport: "Copy Report",
   },
   it: {
     home: "Home", engine: "Motore", mind: "Mente", input: "Input", apps: "App", about: "Info",
@@ -479,6 +482,9 @@ const UI_STRINGS                                           = {
     audioConsentTitle: "Contesto audio — Privacy e responsabilità",
     audioResp: "Acquisire o trascrivere la voce di altre persone può essere soggetto a regole su privacy e consenso. Usa questa funzione solo per la tua voce, per contenuti pubblici, quando i partecipanti sono informati e acconsentono, o con autorizzazione adeguata. Non usarla mai di nascosto.",
     skip: "Salta", back: "Indietro", next: "Avanti", finish: "Inizia a usare NexoLLM",
+    contributors: "Contributors: EdevS · Claude · Gemini",
+    madeBy: "Creato da EdevS. Gratuito e open source (GNU GPL v3).",
+    reportBug: "Segnala un bug", cancel: "Annulla", copyReport: "Copia resoconto",
   },
   es: {
     home: "Inicio", engine: "Motor", mind: "Mente", input: "Entrada", apps: "Apps", about: "Acerca de",
@@ -494,6 +500,9 @@ const UI_STRINGS                                           = {
     audioConsentTitle: "Contexto de audio — Privacidad y responsabilidad",
     audioResp: "Capturar o transcribir la voz de otras personas puede estar sujeto a normas de privacidad y consentimiento. Usa esta función solo para tu propia voz, contenido público o cuando los participantes estén informados y den su consentimiento. Nunca la uses en secreto.",
     skip: "Omitir", back: "Atrás", next: "Siguiente", finish: "Empezar a usar NexoLLM",
+    contributors: "Colaboradores: EdevS · Claude · Gemini",
+    madeBy: "Creado por EdevS. Gratuito y de código abierto (GNU GPL v3).",
+    reportBug: "Informar de un error", cancel: "Cancelar", copyReport: "Copiar informe",
   },
   fr: {
     home: "Accueil", engine: "Moteur", mind: "Esprit", input: "Saisie", apps: "Apps", about: "À propos",
@@ -509,6 +518,9 @@ const UI_STRINGS                                           = {
     audioConsentTitle: "Contexte audio — Confidentialité et responsabilité",
     audioResp: "La capture ou la transcription de la voix d'autrui peut être soumise à des règles de confidentialité et de consentement. Utilisez cette fonction uniquement pour votre voix, des contenus publics ou avec l'accord des participants.",
     skip: "Passer", back: "Retour", next: "Suivant", finish: "Commencer avec NexoLLM",
+    contributors: "Contributeurs : EdevS · Claude · Gemini",
+    madeBy: "Créé par EdevS. Gratuit et open source (GNU GPL v3).",
+    reportBug: "Signaler un bug", cancel: "Annuler", copyReport: "Copier le rapport",
   },
   de: {
     home: "Start", engine: "Engine", mind: "Kontext", input: "Eingabe", apps: "Apps", about: "Über",
@@ -524,6 +536,9 @@ const UI_STRINGS                                           = {
     audioConsentTitle: "Audio-Kontext — Datenschutz & Verantwortung",
     audioResp: "Das Erfassen oder Transkribieren fremder Stimmen kann Datenschutz- und Einwilligungsregeln unterliegen. Nutze diese Funktion nur für deine eigene Stimme, öffentliche Inhalte oder mit informierter Zustimmung der Beteiligten.",
     skip: "Überspringen", back: "Zurück", next: "Weiter", finish: "NexoLLM starten",
+    contributors: "Mitwirkende: EdevS · Claude · Gemini",
+    madeBy: "Entwickelt von EdevS. Kostenlos und Open Source (GNU GPL v3).",
+    reportBug: "Fehler melden", cancel: "Abbrechen", copyReport: "Bericht kopieren",
   },
   pt: {
     home: "Início", engine: "Motor", mind: "Mente", input: "Entrada", apps: "Apps", about: "Sobre",
@@ -539,6 +554,9 @@ const UI_STRINGS                                           = {
     audioConsentTitle: "Contexto de áudio — Privacidade e responsabilidade",
     audioResp: "Captar ou transcrever a voz de outras pessoas pode estar sujeito a regras de privacidade e consentimento. Utilize esta funcionalidade apenas para a sua própria voz, conteúdos públicos ou com o consentimento informado dos participantes.",
     skip: "Ignorar", back: "Voltar", next: "Seguinte", finish: "Começar a usar o NexoLLM",
+    contributors: "Colaboradores: EdevS · Claude · Gemini",
+    madeBy: "Criado por EdevS. Gratuito e de código aberto (GNU GPL v3).",
+    reportBug: "Comunicar um erro", cancel: "Cancelar", copyReport: "Copiar relatório",
   },
 };
 
@@ -573,6 +591,8 @@ let sttLanguage = "auto";
 let showTour = false;
 let tourStep = 0;
 let showAudioConsent = false;
+let showBugReport = false;
+let bugReportDetails = "";
 
 function t(key        )         {
   return UI_STRINGS[currentLang][key] ?? UI_STRINGS.en[key] ?? key;
@@ -608,6 +628,7 @@ function render()       {
     <main class="page">${renderPane()}</main>
     ${showTour ? renderTourModal() : ""}
     ${showAudioConsent ? renderAudioConsentModal() : ""}
+    ${showBugReport ? renderBugReportModal() : ""}
   `;
 
   bindEvents();
@@ -650,6 +671,15 @@ function renderPane()         {
           </div>
           <button class="btn">Check for Updates</button>
         </div>
+      </div>
+      <div style="display:flex;justify-content:center;gap:10px;margin-top:16px;flex-wrap:wrap;">
+        <button id="open-bug-report" class="btn">🐞 ${t("reportBug")}</button>
+        <a href="https://github.com/edevscomp/NexoLLM" target="_blank" rel="noreferrer" class="btn" style="text-decoration:none;">GitHub</a>
+        <a href="https://buymeacoffee.com/edevs" target="_blank" rel="noreferrer" class="btn" style="text-decoration:none;">☕ Buy Me a Coffee</a>
+      </div>
+      <div style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-secondary);line-height:1.6;">
+        <div>${t("madeBy")}</div>
+        <div>${t("contributors")}</div>
       </div>
     `;
   }
@@ -830,6 +860,24 @@ function renderAudioConsentModal()         {
   `;
 }
 
+function renderBugReportModal() {
+  const isEmpty = bugReportDetails.trim().length === 0;
+  return `
+    <div class="modal-backdrop" id="bug-backdrop">
+      <div class="modal-card">
+        <div class="modal-scroll">
+          <div class="row-title" style="font-size:17px;">🐞 ${t("reportBug")}</div>
+          <textarea id="bug-details-input" rows="5" style="width:100%;margin-top:10px;border-radius:10px;padding:10px;background:var(--surface);color:var(--text);border:1px solid var(--border);user-select:text;">${bugReportDetails}</textarea>
+        </div>
+        <div class="tour-footer" style="justify-content:space-between;">
+          <button id="close-bug-report" class="btn">${t("cancel")}</button>
+          <button id="copy-bug-report" class="btn primary" ${isEmpty ? "disabled" : ""}>${t("copyReport")}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function bindEvents()       {
   document.getElementById("lang-select")?.addEventListener("change", (e) => {
     currentLang = (e.target                     ).value            ;
@@ -885,6 +933,20 @@ function bindEvents()       {
   document.getElementById("close-consent")?.addEventListener("click", () => {
     showAudioConsent = false;
     render();
+  });
+
+  document.getElementById("open-bug-report")?.addEventListener("click", () => {
+    showBugReport = true;
+    render();
+  });
+  document.getElementById("close-bug-report")?.addEventListener("click", () => {
+    showBugReport = false;
+    render();
+  });
+  document.getElementById("bug-details-input")?.addEventListener("input", (e) => {
+    bugReportDetails = e.target.value;
+    const copyBtn = document.getElementById("copy-bug-report");
+    if (copyBtn) copyBtn.disabled = bugReportDetails.trim().length === 0;
   });
 
   // Smooth fade-in / fade-out hover tooltip on stacked pastel histogram blocks

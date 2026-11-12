@@ -528,6 +528,7 @@ let stringsPT: [String: String] = [
     "Looks for a new version on GitHub once a day. Nothing else is sent.": "Procura uma nova versão no GitHub uma vez por dia. Nada mais é enviado.",
     "Support the project · Buy Me a Coffee": "Apoiar o projeto · Buy Me a Coffee",
     "Made by {0}. Free and open source (GNU GPL v3).": "Criado por {0}. Gratuito e de código aberto (GNU GPL v3).",
+    "Contributors: {0}": "Colaboradores: {0}",
     "Third-party notices": "Avisos de terceiros",
     "Offline · requires Wi-Fi": "Offline · requer Wi-Fi",
     "Version {0} is available": "A versão {0} está disponível",

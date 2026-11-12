@@ -80,9 +80,11 @@ On first launch, the interactive tour helps pick and download a local model suit
 
 Every shortcut can be customized in **Settings → Input**.
 
-## Status & License
+## Status, Contributors & License
 
 NexoLLM is in active early-stage development — built for dependable daily writing, though occasional rough edges may still appear. Bug reports and pull requests are welcome in [Issues](https://github.com/edevscomp/NexoLLM/issues).
+
+**Contributors:** [**EdevS**](https://github.com/edevscomp) · **Claude** (Anthropic) · **Gemini** (Google DeepMind)
 
 [Privacy Policy](PRIVACY.md) · [Security & Ed25519 Verification](SECURITY.md) · [Audio Notice](LEGAL_AUDIO_PLUGIN.md) · [Changelog](CHANGELOG.md) · [GNU GPL v3.0](LICENSE) · [Trademarks](TRADEMARKS.md)
 

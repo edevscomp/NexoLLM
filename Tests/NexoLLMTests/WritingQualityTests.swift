@@ -292,6 +292,21 @@ final class WritingQualityTests: XCTestCase {
         Settings.shared.prefs.exampleLanguage = .english
         XCTAssertEqual(L("Language", "Lingua"), "Language")
         XCTAssertEqual(Fmt.status("Ready · model.gguf"), "Ready · model.gguf")
+
+        // Contributors credit includes EdevS, Claude and Gemini across all 6 languages
+        XCTAssertTrue(Brand.contributors.contains("Claude"))
+        XCTAssertTrue(Brand.contributors.contains("Gemini"))
+        for lang in ExampleLanguage.allCases {
+            Settings.shared.prefs.exampleLanguage = lang
+            let line = L("Contributors: \(Brand.contributors)", "Contributors: \(Brand.contributors)")
+            XCTAssertTrue(line.contains("EdevS") && line.contains("Claude") && line.contains("Gemini"), "Missing contributors in \(lang)")
+        }
+
+        // ModalCenter can open and cancel/close BugReport even without typing
+        ModalCenter.shared.current = .bugReport
+        XCTAssertEqual(ModalCenter.shared.current, .bugReport)
+        ModalCenter.shared.current = nil
+        XCTAssertNil(ModalCenter.shared.current)
     }
 
     func testLinksNeverBlockOrCorruptSuggestions() {
