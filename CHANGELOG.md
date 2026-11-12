@@ -7,10 +7,10 @@ The build number in parentheses grows with every commit.
 ## [0.9.1] - 2026-11-12
 
 ### Polished installer, UI & contributors
-- Upgraded the `.dmg` installer builder to write native bookmark records (`pBBk`) and deterministic binary `.DS_Store` icon-view, window bounds and Retina Aurora/Glass background records directly for macOS 26 Tahoe+.
+- Upgraded the `.dmg` installer builder to write native bookmark records (`pBBk`) and deterministic binary `.DS_Store` icon-view, window bounds and Retina Aurora/Glass background records directly.
 - Fixed modal scrollbar dragging in **About** so scrolling inside **What's New**, **Privacy & License** and **Report a Bug** never drags the application window.
 - Enabled the **Cancel** button in **Report a Bug** even when the text field is empty, and added **Claude** and **Gemini** to **Contributors**.
-- Added `@MainActor` test isolation annotations and aligned Swift target settings so automated CI passes cleanly across Xcode 16.4 and newer toolchains.
+- Added `@MainActor` test isolation annotations and aligned Swift target settings so automated CI passes cleanly.
 
 ## [0.9.0] - 2026-11-11
 

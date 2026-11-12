@@ -24,7 +24,7 @@ covers the exact message
 NexoLLM-release-v1:<version>:<sha256 of release installer>
 ```
 
-and is published next to each release installer as `<installer>.sig` (for example `NexoLLM.dmg.sig`, `NexoLLM-Setup-x64.msi.sig`, `NexoLLM-x86_64.AppImage.sig`). The public key is compiled into the app:
+and is published next to each release installer as `<installer>.sig` (for example `NexoLLM-macos.dmg.sig`). The public key is compiled into the app:
 
 ```
 AUq3fVygMR4hxBPj8avt5+pd3BYGUCdFQVA4QhTfBIo=
@@ -52,7 +52,7 @@ To check the Ed25519 signature yourself, verify `NexoLLM-release-v1:<version>:<s
 ## Building it yourself
 
 The source is public under the GPL-3.0: you can read it and build the app yourself with
-[docs/BUILDING.md](docs/BUILDING.md) and [docs/MULTIPLATFORM.md](docs/MULTIPLATFORM.md). The binary AI runtimes (llama.cpp and whisper.cpp) are pinned to a
+[docs/BUILDING.md](docs/BUILDING.md). The binary AI runtimes (llama.cpp and whisper.cpp) are pinned to a
 release and verified by SHA-256 before use.
 
 ## How the app protects you
