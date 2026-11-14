@@ -2337,8 +2337,11 @@ final class CompletionController {
 
     /// Rough size of the in-memory caches, for Settings.
     var cacheBytes: Int {
-        resultCache.entries.reduce(0) { $0 + $1.key.utf8.count + $1.value.text.utf8.count }
-            + altCache.entries.reduce(0) { $0 + $1.key.utf8.count + $1.value.reduce(0) { $0 + $1.utf8.count } }
+        let resultBytes = resultCache.entries.reduce(0) { $0 + $1.key.utf8.count + $1.value.text.utf8.count }
+        let altBytes = altCache.entries.reduce(0) { total, entry in
+            total + entry.key.utf8.count + entry.value.reduce(0) { $0 + $1.utf8.count }
+        }
+        return resultBytes + altBytes
     }
 
     // MARK: Word tools: synonyms

@@ -124,7 +124,11 @@ final class ScreenContext: ObservableObject {
     }
 
     /// Text held in memory, for Settings → Clear Cache.
-    var bytes: Int { (snapshots.entries.values.map(\.text) + pinned.values.map(\.text)).reduce(0) { $0 + $1.utf8.count } }
+    var bytes: Int {
+        let snapBytes = snapshots.entries.values.reduce(0) { $0 + $1.text.utf8.count }
+        let pinBytes = pinned.values.reduce(0) { $0 + $1.text.utf8.count }
+        return snapBytes + pinBytes
+    }
 
     // MARK: Policy (pure, unit-tested)
 

@@ -64,6 +64,10 @@ struct BoundedCache<Key: Hashable, Value> {
     private var values: [Key: Value] = [:]
     private var order: [Key] = []
 
+    init(limit: Int) {
+        self.limit = limit
+    }
+
     var isEmpty: Bool { values.isEmpty }
     var entries: [Key: Value] { values }
 
