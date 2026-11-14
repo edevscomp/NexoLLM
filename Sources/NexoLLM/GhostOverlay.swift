@@ -42,8 +42,7 @@ final class FloatingPanel: NSPanel {
 
     /// Shows the panel at `frame`, always fully opaque. The window's alpha is never animated: an
     /// interrupted fade left the WindowServer surface at ~0 while the panel still counted as visible.
-    /// `entrance`/`offset` are kept for callers; `animateResize` eases a size change of a visible panel.
-    func place(_ frame: NSRect, entrance: Bool = false, offset: CGVector = CGVector(dx: -2, dy: 0), animateResize: Bool = false) {
+    func place(_ frame: NSRect, animateResize: Bool = false) {
         let f = frame.integral
         alphaValue = 1
         if animateResize, isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, f.size != self.frame.size {
@@ -61,6 +60,7 @@ final class FloatingPanel: NSPanel {
     func hide() {
         alphaValue = 1
         if isVisible { orderOut(nil) }
+        host.rootView = AnyView(EmptyView())   // drop hosted views so offscreen repeatForever animations stop
     }
 }
 
@@ -159,34 +159,25 @@ struct BubbleView: View {
 /// Grey ghost text (or a bubble) next to the caret.
 final class GhostOverlay {
     private var panel = FloatingPanel(clickThrough: true)
+    private var content = AnyView(EmptyView())
 
     /// A fresh window: macOS can silently drop a long-lived borderless panel's surface (spaces, sleep).
-    func rebuildPanel() { panel.hide(); panel = FloatingPanel(clickThrough: true); shownText = ""; shownStyle = nil }
+    func rebuildPanel() { panel.hide(); panel = FloatingPanel(clickThrough: true) }
+
+    private func setContent<V: View>(_ view: V) -> NSSize { content = AnyView(view); return panel.setContent(content) }
 
     /// Places the panel; if it didn't come on screen, rebuilds it once and tries again.
-    private var content = AnyView(EmptyView())
-    private func setContent<V: View>(_ view: V) -> NSSize { content = AnyView(view); return panel.setContent(content) }
-    private func place(_ frame: NSRect, entrance: Bool, offset: CGVector = CGVector(dx: -2, dy: 0)) {
-        panel.place(frame, entrance: entrance, offset: offset)
+    private func place(_ frame: NSRect) {
+        panel.place(frame)
         guard !panel.isVisible else { return }
         Log.info("overlay: suggestion panel was not visible — rebuilt")
-        let (text, style) = (shownText, shownStyle)
         rebuildPanel()
-        (shownText, shownStyle) = (text, style)
         panel.setContent(content)
-        panel.place(frame, entrance: entrance, offset: offset)
+        panel.place(frame)
     }
+
     /// On screen, opaque *and* wide enough to read: Tab must never accept something unseen.
     var isVisible: Bool { panel.isVisible && panel.alphaValue > 0.9 && panel.frame.width >= 10 }
-    /// What's on screen, to tell a new suggestion (animated in) from the same one getting shorter as the
-    /// user types or accepts it (moved instantly, never re-animated).
-    private var shownText = ""
-    private var shownStyle: GhostStyle?
-
-    private func isNew(_ text: String, _ style: GhostStyle) -> Bool {
-        defer { shownText = text; shownStyle = style }
-        return !panel.isVisible || shownStyle != style || !shownText.hasSuffix(text)
-    }
 
     func showInline(_ text: String, caretAX: CGRect, fontSize: CGFloat?, keyLabel: String, head: String = "",
                     tone: Backdrop.Tone = .unknown) {
@@ -204,8 +195,7 @@ final class GhostOverlay {
                        keyLabel: keyLabel, id: text)
             return
         }
-        let y = caret.midY - fitting.height / 2
-        place(NSRect(x: x, y: y, width: width, height: fitting.height), entrance: isNew(text, .inline))
+        place(NSRect(x: x, y: caret.midY - fitting.height / 2, width: width, height: fitting.height))
     }
 
     /// Bubble below the caret line. `content` is the main label (e.g. text, or strikethrough + fix).
@@ -218,11 +208,10 @@ final class GhostOverlay {
             x = min(max(x, s.visibleFrame.minX), s.visibleFrame.maxX - fitting.width)
             if y < s.visibleFrame.minY { y = caret.maxY - 2 }  // no room below: go above
         }
-        place(NSRect(x: x, y: y, width: fitting.width, height: fitting.height),
-              entrance: isNew(id, .bubble), offset: CGVector(dx: 0, dy: 2))
+        place(NSRect(x: x, y: y, width: fitting.width, height: fitting.height))
     }
 
-    func hide() { panel.hide(); shownText = ""; shownStyle = nil }
+    func hide() { panel.hide() }
 }
 
 // MARK: - Toast (manual screen capture feedback & top error banner)
@@ -277,7 +266,7 @@ final class ToastOverlay {
             let s = mouseScreen?.visibleFrame ?? .zero
             origin = NSPoint(x: s.midX - fitting.width / 2, y: s.maxY - fitting.height - 14)
         }
-        panel.place(NSRect(origin: origin, size: fitting), entrance: !panel.isVisible, offset: CGVector(dx: 0, dy: -2))
+        panel.place(NSRect(origin: origin, size: fitting))
         hideWork?.cancel()
         guard !busy else { return }
         let work = DispatchWorkItem { [weak self] in self?.hide() }
@@ -288,7 +277,6 @@ final class ToastOverlay {
     func hide() {
         hideWork?.cancel()
         panel.hide()
-        panel.setContent(EmptyView())   // drop the hosted view: nothing stays alive offscreen
     }
 }
 
@@ -313,11 +301,9 @@ struct ListPanelView: View {
     var loading = false
 
     private var symbol: String {
-        switch header.lowercased() {
-        case "emoji": return "face.smiling"
-        case "synonyms", "sinonimi": return "character.book.closed"
-        default: return "sparkles"
-        }
+        if header.lowercased() == "emoji" { return "face.smiling" }
+        if header == L("Synonyms", "Sinonimi") || header.lowercased() == "synonyms" { return "character.book.closed" }
+        return "sparkles"
     }
 
     var body: some View {
@@ -456,8 +442,7 @@ final class ListOverlay {
             x = min(max(x, s.visibleFrame.minX), s.visibleFrame.maxX - fitting.width)
             if y < s.visibleFrame.minY { y = anchor.maxY }
         }
-        panel.place(NSRect(x: x, y: y, width: fitting.width, height: fitting.height),
-                    entrance: !panel.isVisible, offset: CGVector(dx: 0, dy: 2), animateResize: true)
+        panel.place(NSRect(x: x, y: y, width: fitting.width, height: fitting.height), animateResize: true)
     }
 
     func hide() { items = []; loading = false; selectedIndex = 0; panel.hide() }
@@ -491,8 +476,38 @@ struct QuickMenuView: View {
     var onHoverRow: ((Int) -> Void)?
     var onHoverSubitem: ((Int) -> Void)?
 
-    @State private var hoveredRow: Int? = nil
-    @State private var hoveredSubRow: Int? = nil
+    private func menuRow(key: String, item: QuickMenuItem, highlighted: Bool, expanded: Bool = false,
+                         compact: Bool = false, action: @escaping () -> Void, onHover: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: compact ? 8 : 9) {
+                KeyCap(label: key, highlighted: highlighted)
+                Image(systemName: item.symbol)
+                    .font(.system(size: compact ? 11 : 11.5, weight: .medium))
+                    .foregroundStyle(highlighted ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+                    .frame(width: compact ? 15 : 16)
+                Text(item.title)
+                    .font(.system(size: compact ? 12 : 12.5, weight: highlighted ? .semibold : (compact ? .medium : .regular)))
+                    .lineLimit(1)
+                Spacer(minLength: compact ? 6 : 8)
+                if let badge = item.badge {
+                    Text(badge).font(.system(size: compact ? 9.5 : 10, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                if !item.subitems.isEmpty {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: compact ? 8.5 : 9.5, weight: .bold))
+                        .foregroundStyle((expanded || highlighted) ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, compact ? 4.5 : 5)
+            .background(
+                RoundedRectangle(cornerRadius: compact ? 6.5 : 7, style: .continuous)
+                    .fill(highlighted ? Theme.accent.opacity(expanded ? 0.16 : 0.15) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { if $0 { onHover() } }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -518,87 +533,15 @@ struct QuickMenuView: View {
             Divider().opacity(0.5).padding(.bottom, 3)
             ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
                 let isExpanded = expandedIndex == i
-                let isHovered = hoveredRow == i
-                let isHighlighted = (i == selected && selectedSubIndex == nil) || isExpanded || isHovered
-                Button {
-                    onSelect?(i)
-                } label: {
-                    HStack(spacing: 9) {
-                        KeyCap(label: "\(i + 1)", highlighted: isHighlighted)
-                        Image(systemName: item.symbol)
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(isHighlighted ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                            .frame(width: 16)
-                        Text(item.title)
-                            .font(.system(size: 12.5, weight: isHighlighted ? .semibold : .regular))
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        if let badge = item.badge {
-                            Text(badge).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-                        }
-                        if !item.subitems.isEmpty {
-                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 9.5, weight: .bold))
-                                .foregroundStyle(isExpanded ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                                .rotationEffect(.degrees(isExpanded ? 0 : 0))
-                        }
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(isHighlighted ? Theme.accent.opacity(isHovered ? 0.20 : (isExpanded ? 0.16 : 0.14)) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    withAnimation(.easeOut(duration: 0.12)) {
-                        hoveredRow = hovering ? i : (hoveredRow == i ? nil : hoveredRow)
-                    }
-                    if hovering { onHoverRow?(i) }
-                }
+                let isHighlighted = (i == selected && selectedSubIndex == nil) || isExpanded
+                menuRow(key: "\(i + 1)", item: item, highlighted: isHighlighted, expanded: isExpanded,
+                        action: { onSelect?(i) }, onHover: { onHoverRow?(i) })
 
                 if isExpanded, !item.subitems.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(Array(item.subitems.enumerated()), id: \.element.id) { j, sub in
-                            let isSubHovered = hoveredSubRow == j
-                            let isSubSelected = selectedSubIndex == j || isSubHovered
-                            Button {
-                                onSelectSubitem?(j)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    KeyCap(label: "⇧\(j + 1)", highlighted: isSubSelected)
-                                    Image(systemName: sub.symbol)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(isSubSelected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                                        .frame(width: 15)
-                                    Text(sub.title)
-                                        .font(.system(size: 12, weight: isSubSelected ? .semibold : .medium))
-                                        .lineLimit(1)
-                                    Spacer(minLength: 6)
-                                    if let badge = sub.badge {
-                                        Text(badge).font(.system(size: 9.5, weight: .semibold)).foregroundStyle(.secondary)
-                                    }
-                                    if !sub.subitems.isEmpty {
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 8.5, weight: .bold))
-                                            .foregroundStyle(isSubSelected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                                    }
-                                }
-                                .padding(.horizontal, 8).padding(.vertical, 4.5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6.5, style: .continuous)
-                                        .fill(isSubSelected ? Theme.accent.opacity(isSubHovered ? 0.20 : 0.15) : Color.clear)
-                                )
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .onHover { hovering in
-                                withAnimation(.easeOut(duration: 0.12)) {
-                                    hoveredSubRow = hovering ? j : (hoveredSubRow == j ? nil : hoveredSubRow)
-                                }
-                                if hovering { onHoverSubitem?(j) }
-                            }
+                            menuRow(key: "⇧\(j + 1)", item: sub, highlighted: selectedSubIndex == j, compact: true,
+                                    action: { onSelectSubitem?(j) }, onHover: { onHoverSubitem?(j) })
                         }
                     }
                     .padding(4)
@@ -634,6 +577,7 @@ final class QuickMenuOverlay {
     private var statusColor = Theme.mint
     private var words = 0
     private var anchorTopLeft: NSPoint = .zero
+    private var lastMouseLocation: NSPoint = NSEvent.mouseLocation
     var isVisible: Bool { panel.isVisible && !items.isEmpty }
     var hasExpandedSubmenu: Bool {
         guard let exp = expandedIndex, exp < items.count else { return false }
@@ -653,16 +597,24 @@ final class QuickMenuOverlay {
             onSelectSubitem: { [weak self] j in self?.activateSubitem(j) },
             onHoverRow: { [weak self] i in
                 guard let self, i >= 0, i < self.items.count else { return }
+                let mouse = NSEvent.mouseLocation
+                guard hypot(mouse.x - self.lastMouseLocation.x, mouse.y - self.lastMouseLocation.y) > 0.5 else { return }
+                self.lastMouseLocation = mouse
                 if self.selectedIndex != i || self.selectedSubIndex != nil {
                     self.selectedIndex = i
                     self.selectedSubIndex = nil
+                    self.panel.setContent(self.view())
                 }
             },
             onHoverSubitem: { [weak self] j in
                 guard let self, let exp = self.expandedIndex, exp < self.items.count,
                       j >= 0, j < self.items[exp].subitems.count else { return }
+                let mouse = NSEvent.mouseLocation
+                guard hypot(mouse.x - self.lastMouseLocation.x, mouse.y - self.lastMouseLocation.y) > 0.5 else { return }
+                self.lastMouseLocation = mouse
                 if self.selectedSubIndex != j {
                     self.selectedSubIndex = j
+                    self.panel.setContent(self.view())
                 }
             }
         )
@@ -680,10 +632,12 @@ final class QuickMenuOverlay {
         self.selectedSubIndex = nil
         self.parentSubitemsStack = []
         self.anchorTopLeft = topLeft
-        refreshLayout(entrance: true)
+        self.lastMouseLocation = NSEvent.mouseLocation
+        refreshLayout()
     }
 
-    private func refreshLayout(entrance: Bool = false) {
+    private func refreshLayout() {
+        self.lastMouseLocation = NSEvent.mouseLocation
         let size = panel.setContent(view())
         let currentTopLeft = panel.isVisible ? NSPoint(x: panel.frame.minX + 14, y: panel.frame.maxY) : anchorTopLeft
         var origin = NSPoint(x: currentTopLeft.x - 14, y: currentTopLeft.y - size.height)
@@ -691,7 +645,7 @@ final class QuickMenuOverlay {
             origin.x = min(max(origin.x, s.minX), s.maxX - size.width)
             origin.y = min(max(origin.y, s.minY), s.maxY - size.height)
         }
-        panel.place(NSRect(origin: origin, size: size), entrance: entrance, offset: CGVector(dx: 0, dy: 2), animateResize: false)
+        panel.place(NSRect(origin: origin, size: size), animateResize: false)
     }
 
     /// ↑ / ↓ navigation: navigates inside the open dropdown if one is expanded, otherwise navigates top-level items.
@@ -1236,6 +1190,7 @@ private struct ScreenSelectionView: View {
 final class ScreenSelectionOverlay {
     private var panel: KeyableOverlayPanel?
     private var keyMonitor: Any?
+    private var previousApp: NSRunningApplication?
     var isVisible: Bool { panel?.isVisible ?? false }
 
     /// Remembers the user's dragged search bar offset for 10 minutes (600 seconds), then resets to default.
@@ -1266,6 +1221,8 @@ final class ScreenSelectionOverlay {
                onQuestion: @escaping (String) -> Void,
                onRegion: @escaping (CGRect) -> Void) {
         hide()
+        let front = NSWorkspace.shared.frontmostApplication
+        previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main else { return }
         let p = KeyableOverlayPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false
@@ -1311,15 +1268,19 @@ final class ScreenSelectionOverlay {
 
     func hide() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
-        if panel != nil {
+        let hadPanel = panel != nil
+        if hadPanel {
             NSCursor.pop()
             NSCursor.arrow.set()
         }
         panel?.orderOut(nil)
         panel = nil
+        if hadPanel, let prev = previousApp, !prev.isTerminated { prev.activate() }
+        previousApp = nil
     }
 }
 
+#if DEBUG || NEXO_DEV
 // MARK: - Design review gallery (used by `--render-ui`)
 
 struct OverlayGallery: View {
@@ -1352,3 +1313,4 @@ struct OverlayGallery: View {
         .background(Color(nsColor: .textBackgroundColor))
     }
 }
+#endif

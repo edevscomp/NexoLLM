@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private lazy var controller = CompletionController(engine: engine)
     private var settings: Settings { Settings.shared }
     private var statusItem: NSStatusItem?
+    private let iconAnimator = MenuBarAnimator()
     private var settingsWindow: NSWindow?
     private var permissionTimer: Timer?
     private var unloadWork: DispatchWorkItem?
@@ -58,9 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         // Screen locked or Mac asleep: save, then drop the decryption key from memory until it's needed again.
         // Screen locked or Mac asleep: Audio Context stops too (and wipes what it heard).
-        let lockData: (Notification) -> Void = { _ in
+        let lockData: (Notification) -> Void = { [weak self] _ in
             Memory.shared.flush(); History.shared.flush(); History.lockKeyInMemory()
             if Settings.shared.prefs.micContextEnabled { Settings.shared.prefs.micContextEnabled = false }
+            MainActor.assumeIsolated { self?.iconAnimator.stop() }
         }
         DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name("com.apple.screenIsLocked"),
                                                             object: nil, queue: .main, using: lockData)
@@ -80,11 +82,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in DispatchQueue.main.async { MainActor.assumeIsolated { self?.refreshEngineStatus(); self?.updateIcon() } } }
             .store(in: &cancellables)
-        LegacyCleanup.removeCloudKeysOnce()
+        Settings.removeLegacyCloudKeysOnce()
         reloadModel()
 
         controller.onOpenSettings = { [weak self] in self?.openSettings() }
-        controller.onStatsChange = { [weak self] in self?.updateIcon() }
+        controller.onStatsChange = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.updateIcon()
+                self?.iconAnimator.pulseAccept()
+            }
+        }
         controller.onStatusChange = { [weak self] in self?.updateIcon() }
         controller.onRestart = { [weak self] in self?.restartServices() }
         ScreenContext.shared.onStateChange = { [weak self] in self?.updateIcon() }
@@ -111,7 +118,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             .removeDuplicates()
             .dropFirst()
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.applyModelRule() }
+            .sink { [weak self] _ in self?.applyModelRule(explicit: true) }
+            .store(in: &cancellables)
+        settings.$prefs
+            .map(\.unloadAfterMinutes)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.scheduleIdleUnload() }
             .store(in: &cancellables)
         settings.$prefs
             .map(\.appearance)
@@ -140,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             .receive(on: RunLoop.main)
             .sink { [weak self] on, _, _ in
                 AudioContext.shared.setEnabled(on)
+                if let self { NSApp.mainMenu = self.makeMainMenu() }
                 self?.updateIcon()
             }
             .store(in: &cancellables)
@@ -226,10 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     /// Loads the model the current rule asks for, if it isn't the one in memory (only one is ever loaded).
-    private func applyModelRule() {
+    private func applyModelRule(explicit: Bool = false) {
         let wanted = settings.effectiveModelPath
         guard wanted != engine.modelPath else { return }
-        if case .unloaded = engine.state { return }   // will load the right one on wake
+        if !explicit, !wanted.isEmpty, case .unloaded = engine.state { return }   // will load the right one on wake
         Log.info("model: switching to \((wanted as NSString).lastPathComponent)")
         reloadModel()
     }
@@ -259,7 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             permissionTimer?.invalidate()
             permissionTimer = nil
             updateIcon()
+            #if DEBUG || NEXO_DEV
             if CommandLine.arguments.contains("--probe") { startProbe() }
+            #endif
             return
         }
         if permissionTimer == nil {
@@ -270,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
+    #if DEBUG || NEXO_DEV
     private func startProbe() {
         for i in 1...10 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i)) {
@@ -290,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
         }
     }
+    #endif
 
     // MARK: Menu bar
 
@@ -300,14 +319,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             menu.delegate = self
             item.menu = menu
             statusItem = item
+            MainActor.assumeIsolated { iconAnimator.attach(item.button) }
             updateIcon()
         } else if !visible, let item = statusItem {
+            MainActor.assumeIsolated { iconAnimator.attach(nil) }
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
     }
 
-    /// The menu bar icon is our custom NexoLLM mark, with a distinct variant for every status.
+    /// The menu bar icon is our custom NexoLLM mark, with a distinct variant and smooth micro-animation per status.
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
         let state: MenuBarIcon.State
@@ -330,8 +351,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         } else {
             state = .active
         }
-        button.image = MenuBarIcon.image(for: state)
-        button.appearsDisabled = dimmed
+        MainActor.assumeIsolated {
+            iconAnimator.attach(button)
+            iconAnimator.setState(state, dimmed: dimmed)
+        }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -400,13 +423,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private func openSettings() {
         if settingsWindow == nil {
             let actions = SettingsActions(
-                reloadModel: { [weak self] in self?.reloadModel() },
                 openAccessibilitySettings: { [weak self] in self?.openAccessibility() },
                 requestScreenRecording: { [weak self] in self?.requestScreenRecording() },
-                revealModels: {
-                    let url = URL(fileURLWithPath: Settings.shared.prefs.modelPath)
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                },
                 restartServices: { [weak self] in self?.restartServices() })
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsRootView(actions: actions)))
             w.title = Brand.name
@@ -449,8 +467,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { iconAnimator.stop() }
         CrashReporter.shared.markCleanExit()
         controller.commitMemoryBurst(sync: true)
+        Settings.shared.flush()
         Memory.shared.flush()
         History.shared.flush()
         Stats.shared.flush()

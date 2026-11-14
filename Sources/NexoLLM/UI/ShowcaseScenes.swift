@@ -1,3 +1,4 @@
+#if DEBUG || NEXO_DEV
 import SwiftUI
 
 // Scenes rendered by `--render-ui` for the public README: real NexoLLM views on clean,
@@ -393,3 +394,4 @@ struct LookupScene: View {
         }
     }
 }
+#endif

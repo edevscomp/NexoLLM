@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Security
 
 // MARK: - Shortcut
 
@@ -31,6 +32,9 @@ struct Shortcut: Codable, Equatable, Hashable {
 }
 
 enum KeyNames {
+    private static var cache: [Int: String] = [:]
+    private static var cachedLayoutID: String?
+
     static func name(_ code: Int) -> String {
         switch code {
         case kVK_Tab: return "⇥"
@@ -44,11 +48,15 @@ enum KeyNames {
         case kVK_DownArrow: return "↓"
         default: break
         }
-        // Translate with the current keyboard layout.
-        guard let src = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-              let ptr = TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData) else { return "#\(code)" }
+        guard let src = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return "#\(code)" }
+        let layoutID = TISGetInputSourceProperty(src, kTISPropertyInputSourceID).map {
+            Unmanaged<CFString>.fromOpaque($0).takeUnretainedValue() as String
+        }
+        if layoutID != cachedLayoutID { cachedLayoutID = layoutID; cache.removeAll() }
+        if let hit = cache[code] { return hit }
+        guard let ptr = TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData) else { return "#\(code)" }
         let data = Unmanaged<CFData>.fromOpaque(ptr).takeUnretainedValue() as Data
-        return data.withUnsafeBytes { raw -> String in
+        let translated = data.withUnsafeBytes { raw -> String in
             guard let layout = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return "#\(code)" }
             var dead: UInt32 = 0
             var chars = [UniChar](repeating: 0, count: 4)
@@ -57,6 +65,8 @@ enum KeyNames {
                            OptionBits(kUCKeyTranslateNoDeadKeysBit), &dead, 4, &len, &chars)
             return len > 0 ? String(utf16CodeUnits: chars, count: len).uppercased() : "#\(code)"
         }
+        cache[code] = translated
+        return translated
     }
 
     /// The physical key right above Tab (`\` on Italian ISO, `` ` `` on US ANSI).
@@ -166,59 +176,26 @@ enum AlternativesScope: String, Codable, CaseIterable, Identifiable {
 enum ExampleLanguage: String, Codable, CaseIterable, Identifiable {
     case english, italian, spanish, french, german, portuguese
     var id: String { rawValue }
-    var label: String {
+
+    private var meta: (label: String, iso: String, locale: String, flag: String, englishName: String) {
         switch self {
-        case .english: return "English"
-        case .italian: return "Italiano"
-        case .spanish: return "Español"
-        case .french: return "Français"
-        case .german: return "Deutsch"
-        case .portuguese: return "Português"
+        case .english: return ("English", "en", "en_US", "🇬🇧", "English")
+        case .italian: return ("Italiano", "it", "it_IT", "🇮🇹", "Italian")
+        case .spanish: return ("Español", "es", "es_ES", "🇪🇸", "Spanish")
+        case .french: return ("Français", "fr", "fr_FR", "🇫🇷", "French")
+        case .german: return ("Deutsch", "de", "de_DE", "🇩🇪", "German")
+        case .portuguese: return ("Português", "pt", "pt_PT", "🇵🇹", "Portuguese")
         }
     }
+
+    var label: String { meta.label }
     /// ISO 639-1 code: "en", "it", "es", "fr", "de", "pt".
-    var iso: String {
-        switch self {
-        case .english: return "en"
-        case .italian: return "it"
-        case .spanish: return "es"
-        case .french: return "fr"
-        case .german: return "de"
-        case .portuguese: return "pt"
-        }
-    }
-    var code: String { iso.uppercased() }
-    var localeIdentifier: String {
-        switch self {
-        case .english: return "en_US"
-        case .italian: return "it_IT"
-        case .spanish: return "es_ES"
-        case .french: return "fr_FR"
-        case .german: return "de_DE"
-        case .portuguese: return "pt_PT"
-        }
-    }
-    var flag: String {
-        switch self {
-        case .english: return "🇬🇧"
-        case .italian: return "🇮🇹"
-        case .spanish: return "🇪🇸"
-        case .french: return "🇫🇷"
-        case .german: return "🇩🇪"
-        case .portuguese: return "🇵🇹"
-        }
-    }
+    var iso: String { meta.iso }
+    var code: String { meta.iso.uppercased() }
+    var localeIdentifier: String { meta.locale }
+    var flag: String { meta.flag }
     /// The language's English name, as the writing tools' instructions use it ("Translate into natural Spanish").
-    var englishName: String {
-        switch self {
-        case .english: return "English"
-        case .italian: return "Italian"
-        case .spanish: return "Spanish"
-        case .french: return "French"
-        case .german: return "German"
-        case .portuguese: return "Portuguese"
-        }
-    }
+    var englishName: String { meta.englishName }
 
     init?(iso: String) {
         guard let l = Self.allCases.first(where: { $0.iso == iso.prefix(2).lowercased() }) else { return nil }
@@ -419,11 +396,27 @@ final class Settings: ObservableObject {
         didSet { if prefs != oldValue { save() } }
     }
 
+    private var saveWork: DispatchWorkItem?
+
     private init() {
-        prefs = Settings.load()
+        var loaded = Settings.load()
         // Audio Context never resumes by itself: listening starts only when the user turns it on, every time.
-        prefs.micContextEnabled = false
-        save()   // persist migrations made while loading (didSet doesn't run in init)
+        loaded.micContextEnabled = false
+        prefs = loaded
+        if UserDefaults.standard.data(forKey: Settings.key) != nil { flush() }
+    }
+
+    /// Removes any pre-0.8 cloud API keys stored in the Keychain once.
+    static func removeLegacyCloudKeysOnce() {
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: "cleanup.cloudKeysRemoved") else { return }
+        d.set(true, forKey: "cleanup.cloudKeysRemoved")
+        for provider in ["openAI", "anthropic", "gemini", "compatible"] {
+            let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Brand.bundleID,
+                                    kSecAttrAccount as String: "api-key-\(provider)"]
+            if SecItemDelete(q as CFDictionary) == errSecSuccess { Log.info("cleanup: removed a stored cloud API key") }
+            d.removeObject(forKey: "cloud.verified.\(provider)")
+        }
     }
 
     private static func load() -> Prefs {
@@ -465,6 +458,16 @@ final class Settings: ObservableObject {
     var savingEnabled = true
 
     private func save() {
+        guard savingEnabled else { return }
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.flush() }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
+
+    func flush() {
+        saveWork?.cancel()
+        saveWork = nil
         guard savingEnabled else { return }
         if let data = try? JSONEncoder().encode(prefs) { UserDefaults.standard.set(data, forKey: Settings.key) }
     }

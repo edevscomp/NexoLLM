@@ -323,6 +323,11 @@ final class Memory: ObservableObject {
         "really", "very", "more", "some", "than", "then", "also", "only", "into", "over", "after", "before",
         "because", "think", "know", "going", "want", "thanks", "thank", "hello", "here", "much", "well", "good",
         "still", "even", "being", "does", "doing", "done", "make", "made", "sure", "maybe", "please", "dear",
+        // Spanish / French / German / Portuguese high-frequency function words
+        "para", "como", "esta", "este", "esto", "todo", "toda", "todos", "porque", "cuando", "donde", "puede", "hacer",
+        "dans", "avec", "pour", "plus", "tout", "tous", "mais", "cette", "sont", "faire", "bien", "sans", "tres",
+        "nicht", "aber", "oder", "auch", "sich", "noch", "schon", "wird", "werden", "haben", "sind", "diese", "dieser",
+        "pelo", "pela", "mais", "muito", "fazer", "voce", "voces", "tambem", "entao",
     ]
 
     // MARK: Persistence (idle/quit only)

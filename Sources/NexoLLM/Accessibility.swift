@@ -31,11 +31,13 @@ struct TextContext {
 enum AX {
     static let systemWide: AXUIElement = {
         let el = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(el, 0.3)   // never hang on a frozen app
+        AXUIElementSetMessagingTimeout(el, 0.25)   // never hang on a frozen app
         return el
     }()
 
-    static func isTrusted(prompt: Bool) -> Bool {
+    private static var fontSizeCache = BoundedCache<String, CGFloat>(limit: 32)
+
+    static func isTrusted(prompt: Bool = false) -> Bool {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         return AXIsProcessTrustedWithOptions([key: prompt] as CFDictionary)
     }
@@ -87,10 +89,12 @@ enum AX {
     /// mode is on): recognized by the window title.
     static func isGoogleDocs(_ pid: pid_t) -> Bool {
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.3)
+        AXUIElementSetMessagingTimeout(app, 0.25)
         guard let w = attr(app, kAXFocusedWindowAttribute), CFGetTypeID(w) == AXUIElementGetTypeID(),
               let title = attr(w as! AXUIElement, kAXTitleAttribute) as? String else { return false }
         return title.contains("Google Docs") || title.contains("Documenti Google")
+            || title.contains("Documentos de Google") || title.contains("Google-Dokumente")
+            || title.contains("Google Documentos")
     }
 
     /// A web text field nested inside the focused web area.
@@ -234,31 +238,48 @@ enum AX {
             enableManualAccessibility(pid, force: true)
             return fail("no focused element in \(app.localizedName ?? "?")")
         }
-        var role = attr(el, kAXRoleAttribute) as? String ?? "?"
-        if browser, attr(el, kAXSelectedTextRangeAttribute) == nil, let child = textChild(el) {
-            el = child
-            role = attr(el, kAXRoleAttribute) as? String ?? "?"
+        let batchNames = [kAXRoleAttribute, kAXSubroleAttribute, kAXSelectedTextRangeAttribute,
+                          kAXNumberOfCharactersAttribute, kAXPlaceholderValueAttribute] as CFArray
+        func readProps(_ element: AXUIElement) -> (role: String, subrole: String?, range: CFTypeRef?, count: Int?, placeholder: String?) {
+            var raw: CFArray?
+            guard AXUIElementCopyMultipleAttributeValues(element, batchNames, AXCopyMultipleAttributeOptions(rawValue: 0), &raw) == .success,
+                  let v = raw as? [Any], v.count == 5 else {
+                return (attr(element, kAXRoleAttribute) as? String ?? "?",
+                        attr(element, kAXSubroleAttribute) as? String,
+                        attr(element, kAXSelectedTextRangeAttribute),
+                        attr(element, kAXNumberOfCharactersAttribute) as? Int,
+                        attr(element, kAXPlaceholderValueAttribute) as? String)
+            }
+            let rv: CFTypeRef? = {
+                let obj = v[2] as CFTypeRef
+                return CFGetTypeID(obj) == AXValueGetTypeID() && AXValueGetType(obj as! AXValue) == .cfRange ? obj : nil
+            }()
+            return (v[0] as? String ?? "?", v[1] as? String, rv, v[3] as? Int, v[4] as? String)
         }
-        let docs = browser && isGoogleDocs(pid)
+        var props = readProps(el)
+        if browser, props.range == nil, let child = textChild(el) {
+            el = child
+            props = readProps(el)
+        }
         // Pages, Keynote and Numbers report their document canvas (an AXScrollArea) as focused and only
         // expose the text inside it to "enhanced" assistive clients. Ask once per app, then look again.
-        if attr(el, kAXSelectedTextRangeAttribute) == nil, role == "AXScrollArea" || role == "AXLayoutArea",
+        if props.range == nil, props.role == "AXScrollArea" || props.role == "AXLayoutArea",
            enableEnhancedUserInterface(pid, app: app.localizedName ?? "?"),
            let again = focusedElement(pid: pid) {
             el = again
-            role = attr(el, kAXRoleAttribute) as? String ?? "?"
+            props = readProps(el)
         }
 
         // Never touch password fields.
-        if let sub = attr(el, kAXSubroleAttribute) as? String, sub == (kAXSecureTextFieldSubrole as String) {
+        if props.subrole == (kAXSecureTextFieldSubrole as String) || props.role == "AXSecureTextField" {
             return fail("password field")
         }
-        if role == "AXSecureTextField" { return fail("password field") }
 
-        guard let rv = attr(el, kAXSelectedTextRangeAttribute), CFGetTypeID(rv) == AXValueGetTypeID() else {
-            if docs { return canvasContext(app, el) }
+        var docs = false
+        guard let rv = props.range else {
+            if browser, isGoogleDocs(pid) { return canvasContext(app, el) }
             enableManualAccessibility(pid, force: true)
-            return fail("focused \(role) has no selected text range")
+            return fail("focused \(props.role) has no selected text range")
         }
         var sel = CFRange()
         guard AXValueGetValue(rv as! AXValue, .cfRange, &sel), sel.location >= 0 else { return fail("bad range") }
@@ -266,26 +287,27 @@ enum AX {
         let loc = sel.location
 
         // Text before/after the caret. Prefer ranged reads; fall back to the full value.
-        let start = max(0, loc - 3000)
+        var start = max(0, loc - 3000)
         var prefix = string(el, CFRange(location: start, length: loc - start))
         var after: String?
-        let total = (attr(el, kAXNumberOfCharactersAttribute) as? Int)
-        if let total, total > loc {
+        if let total = props.count, total > loc {
             after = string(el, CFRange(location: loc, length: min(300, total - loc)))
-        } else if total != nil {
+        } else if props.count != nil {
             after = ""
         }
         if prefix == nil || after == nil {
-            guard let value = attr(el, kAXValueAttribute) as? String else { return fail("\(role): cannot read text") }
+            guard let value = attr(el, kAXValueAttribute) as? String else { return fail("\(props.role): cannot read text") }
             let ns = value as NSString
             guard loc <= ns.length else { return fail("caret beyond text") }
-            prefix = prefix ?? ns.substring(with: NSRange(location: start, length: loc - start))
-            after = after ?? ns.substring(with: NSRange(location: loc, length: min(300, ns.length - loc)))
+            let safePre = ns.rangeOfComposedCharacterSequences(for: NSRange(location: start, length: loc - start))
+            start = safePre.location
+            prefix = prefix ?? ns.substring(with: safePre)
+            let safeAfter = ns.rangeOfComposedCharacterSequences(for: NSRange(location: loc, length: min(300, ns.length - loc)))
+            after = after ?? ns.substring(with: safeAfter)
         }
         guard var prefix, var after else { return fail("no text") }
         // Some web fields report their grey placeholder as the value: an empty field has no text to continue.
-        (prefix, after) = withoutPlaceholder(prefix: prefix, after: after,
-                                             placeholder: attr(el, kAXPlaceholderValueAttribute) as? String)
+        (prefix, after) = withoutPlaceholder(prefix: prefix, after: after, placeholder: props.placeholder)
         let restOfLine = after.prefix(while: { $0 != "\n" && $0 != "\r" })
         let atLineEnd = restOfLine.allSatisfy { $0.isWhitespace }
 
@@ -308,7 +330,7 @@ enum AX {
         let r0 = visible(bounds(el, CFRange(location: loc, length: 0)), "r0")
         let rPrev = loc > 0 && !prevIsNewline ? visible(bounds(el, CFRange(location: loc - 1, length: 1)), "prev") : nil
         caret = CaretGeometry.choose(collapsed: r0, previous: rPrev,
-                                     previousIsSpace: prefix.last == " " || prefix.last == "\t", field: field)
+                                     previousIsSpace: prefix.last.map(SuggestionText.isHorizontalSpace) ?? false, field: field)
         if caret == nil {
             fallback = r0.map { CGRect(x: $0.minX, y: $0.minY, width: 0, height: $0.height) }
                 ?? rPrev.map { CGRect(x: $0.maxX, y: $0.minY, width: 0, height: $0.height) }
@@ -326,11 +348,14 @@ enum AX {
             if let r = textMarkerCaret(el, prevIsNewline: prevIsNewline) { consider(r) } else { notes.append("marker nil") }
         }
         caret = caret ?? fallback
-        if caret == nil, docs, let f = field ?? windowFrame(pid) {   // the hidden input of a canvas editor
-            caret = CGRect(x: f.midX - 60, y: f.maxY - 64, width: 0, height: 18)
+        if caret == nil, browser, isGoogleDocs(pid) {
+            docs = true
+            if let f = field ?? windowFrame(pid) {   // the hidden input of a canvas editor
+                caret = CGRect(x: f.midX - 60, y: f.maxY - 64, width: 0, height: 18)
+            }
         }
         guard let caretRect = caret else {
-            return fail("\(app.localizedName ?? "?") \(role): no caret bounds loc=\(loc) prev=\(String(reflecting: prefix.last.map(String.init) ?? "")) \(notes.joined(separator: ", "))")
+            return fail("\(app.localizedName ?? "?") \(props.role): no caret bounds loc=\(loc) prev=\(String(reflecting: prefix.last.map(String.init) ?? "")) \(notes.joined(separator: ", "))")
         }
 
         // Some editors (CodeMirror/Obsidian, many web apps) omit newlines between lines in the AX text,
@@ -344,6 +369,14 @@ enum AX {
             }
         }
 
+        let key = "\(pid)-\(CFHash(el))"
+        let cachedFont: CGFloat? = {
+            if let f = fontSizeCache[key] { return f }
+            guard let f = fontSize(el, loc) else { return nil }
+            fontSizeCache[key] = f
+            return f
+        }()
+
         return TextContext(
             pid: pid,
             bundleID: app.bundleIdentifier ?? "",
@@ -355,7 +388,7 @@ enum AX {
             after: after,
             atLineEnd: lineEnd,
             caretRect: caretRect,
-            fontSize: fontSize(el, loc),
+            fontSize: cachedFont,
             fieldFrame: field,
             canvasEditor: docs
         )
@@ -402,7 +435,8 @@ enum AX {
             rect = self.rect(from: paramAny(el, "AXBoundsForTextMarkerRange", m))
         }
         if let r = rect, !isOnScreen(r) { rect = nil }
-        let fallbackRect = rect ?? currentContext()?.caretRect ?? elementFrame(el) ?? mouseAXRect()
+        let collapsedRect = hasRange ? bounds(el, CFRange(location: sel.location, length: 0)).flatMap { isOnScreen($0) ? $0 : nil } : nil
+        let fallbackRect = rect ?? collapsedRect ?? elementFrame(el) ?? mouseAXRect()
         let start = hasRange ? max(0, sel.location - 300) : 0
         let before = hasRange ? (string(el, CFRange(location: start, length: sel.location - start)) ?? "") : ""
         return Selection(text: text, rect: fallbackRect, pid: pid, bundleID: app.bundleIdentifier ?? "", before: before)
@@ -477,11 +511,7 @@ enum AX {
         let bundleID = app.bundleIdentifier ?? ""
         let pb = NSPasteboard.general
         let savedCount = pb.changeCount
-        let savedItems: [[(NSPasteboard.PasteboardType, Data)]] = (pb.pasteboardItems ?? []).map { item in
-            item.types.compactMap { type in
-                item.data(forType: type).map { (type, $0) }
-            }
-        }
+        let savedItems = Pasteboards.snapshot(pb)
 
         // Synthesize Cmd+C to probe if any external text (Google page, WhatsApp message, PDF) is currently highlighted.
         let src = CGEventSource(stateID: .combinedSessionState)
@@ -489,6 +519,8 @@ enum AX {
            let up = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: false) {
             down.flags = .maskCommand
             up.flags = .maskCommand
+            down.setIntegerValueField(.eventSourceUserData, value: KeyboardTap.syntheticMarker)
+            up.setIntegerValueField(.eventSourceUserData, value: KeyboardTap.syntheticMarker)
             down.post(tap: .cghidEventTap)
             up.post(tap: .cghidEventTap)
         }
@@ -498,23 +530,12 @@ enum AX {
             guard pb.changeCount == savedCount, attempt < 10 else { finish(); return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { waitForCopy(attempt + 1) }
         }
-        func restoreClipboard() {
-            pb.clearContents()
-            if !savedItems.isEmpty {
-                let restored: [NSPasteboardItem] = savedItems.map { pairs in
-                    let item = NSPasteboardItem()
-                    for (t, d) in pairs { item.setData(d, forType: t) }
-                    return item
-                }
-                pb.writeObjects(restored)
-            }
-        }
         func finish() {
             guard pb.changeCount != savedCount else {
                 // The app may still answer ⌘C after we gave up: if exactly that one copy lands, undo it so the
                 // user's clipboard is never silently replaced by the selection.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                    if pb.changeCount == savedCount + 1 { restoreClipboard() }
+                    if pb.changeCount == savedCount + 1 { Pasteboards.restore(pb, savedItems) }
                 }
                 completion(nil)
                 return
@@ -523,7 +544,7 @@ enum AX {
             let concealed = Pasteboards.isSensitive(pb)
             let copied = concealed ? nil : pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines)
             // Restore original pasteboard immediately so the user's clipboard is untouched.
-            restoreClipboard()
+            Pasteboards.restore(pb, savedItems)
             guard let text = copied, !text.isEmpty, text.count <= maxChars, text.contains(where: { $0.isLetter }) else {
                 completion(nil)
                 return
@@ -536,6 +557,7 @@ enum AX {
     /// True when the focused element is a text field whose selection is a caret (length 0).
     private static func focusedFieldHasEmptySelection(pid: pid_t) -> Bool {
         let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.25)
         guard let f = attr(app, kAXFocusedUIElementAttribute), CFGetTypeID(f) == AXUIElementGetTypeID() else { return false }
         let el = f as! AXUIElement
         guard let v = attr(el, kAXSelectedTextRangeAttribute), CFGetTypeID(v) == AXValueGetTypeID() else { return false }
@@ -634,6 +656,7 @@ enum AX {
         return string(el, CFRange(location: loc, length: end - loc))
     }
 
+    #if DEBUG || NEXO_DEV
     /// Diagnostic: attribute names + a few geometry probes for the focused element.
     static func dump(_ el: AXUIElement, loc: Int) -> String {
         var names: CFArray?
@@ -653,6 +676,7 @@ enum AX {
         let ir = indexRestOfLine(el, loc).map { String(reflecting: String($0.prefix(30))) } ?? "nil"
         return "next=\(next) selRect=\(selRect) markerCaret=\(mc) markerRest=\(mr) indexRest=\(ir) parent=\(parentRole) insLine=\(insertionLine) attrsCount=\((names as? [String])?.count ?? 0) paramsCount=\((pnames as? [String])?.count ?? 0)"
     }
+    #endif
 
     /// Screen rect of the character right after the caret (AX range API, then text markers).
     private static func nextCharRect(_ el: AXUIElement, _ loc: Int) -> CGRect? {

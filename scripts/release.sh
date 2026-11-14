@@ -1,10 +1,7 @@
 #!/bin/bash
-# Publishes NexoLLM: the source code (GPL-3.0) to the public repository and the signed build as a GitHub release.
+# Publishes NexoLLM: the source code (GPL-3.0) to the public repository and the signed macOS build as a GitHub release.
 #   scripts/release.sh source     update the public repository with the current source (no build, no release)
 #   scripts/release.sh            build + sign dist/, update the public repository, create the GitHub release
-#
-# When the GitHub release is published, `.github/workflows/release.yml` automatically builds and attaches the
-# native Windows (.exe) and Linux (.AppImage, .deb) installers and updates SHA256SUMS.txt.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,8 +31,7 @@ publish_source() {
     else
         git -C "$WORK" -c user.name="$(git config user.name)" -c user.email="$(git config user.email)" \
             commit --quiet -m "NexoLLM $VERSION" \
-            -m "Co-authored-by: Claude <noreply@anthropic.com>" \
-            -m "Co-authored-by: Gemini <gemini@google.com>"
+            -m $'Co-authored-by: Claude <noreply@anthropic.com>\nCo-authored-by: gemini-code-assist[bot] <176961590+gemini-code-assist[bot]@users.noreply.github.com>'
         echo "Committed source snapshot for $VERSION."
     fi
     git -C "$WORK" push --quiet -u origin main

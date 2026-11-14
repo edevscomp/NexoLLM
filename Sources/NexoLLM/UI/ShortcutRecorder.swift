@@ -6,10 +6,13 @@ import SwiftUI
 struct ShortcutRecorder: View {
     /// A recorder is waiting for keys: global hotkeys must not swallow them.
     static var isRecording = false
+    private static var stopActive: (() -> Void)?
+    private static var activeToken = UUID()
     @Binding private var shortcut: Shortcut?
     private let optional: Bool
     @State private var recording = false
     @State private var monitor: Any?
+    @State private var token = UUID()
 
     init(shortcut: Binding<Shortcut>) {
         _shortcut = Binding(get: { shortcut.wrappedValue },
@@ -47,7 +50,12 @@ struct ShortcutRecorder: View {
     }
 
     private func start() {
+        Self.stopActive?()
         stop()
+        let myToken = UUID()
+        token = myToken
+        Self.activeToken = myToken
+        Self.stopActive = { if Self.activeToken == myToken { stop() } }
         recording = true
         Self.isRecording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -66,7 +74,10 @@ struct ShortcutRecorder: View {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         recording = false
-        Self.isRecording = false
+        if Self.activeToken == token {
+            Self.isRecording = false
+            Self.stopActive = nil
+        }
     }
 
     static func cgFlags(_ m: NSEvent.ModifierFlags) -> CGEventFlags {

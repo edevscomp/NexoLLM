@@ -1,3 +1,4 @@
+#if DEBUG || NEXO_DEV
 import Foundation
 
 /// Headless engine check: loads the model and times completions, header prompts, alternatives and synonyms.
@@ -171,3 +172,4 @@ enum SelfTest {
         while s.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
     }
 }
+#endif

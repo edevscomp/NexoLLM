@@ -22,8 +22,6 @@ enum Theme {
 
     // Former gradients, now flat accent fills (kept as names so every view shares one look).
     static let aurora = LinearGradient(colors: [accent, accent], startPoint: .top, endPoint: .bottom)
-    static let auroraHorizontal = LinearGradient(colors: [accent, accent], startPoint: .leading, endPoint: .trailing)
-    static let auroraRing = AngularGradient(colors: [accent, accent], center: .center)
 
     /// 1 px neutral border.
     static func hairline(_ strength: Double = 1) -> LinearGradient {
@@ -62,22 +60,6 @@ extension View {
             .background(shape.fill(.regularMaterial))
             .overlay(shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.6))
     }
-
-    /// Kept for source compatibility: the minimal design has no glows.
-    func glow(_ color: Color, radius: CGFloat = 8, opacity: Double = 0.55) -> some View { self }
-}
-
-/// Behind-window vibrancy (blurs the desktop behind the window, done by the window server).
-struct VibrancyBackground: NSViewRepresentable {
-    var material: NSVisualEffectView.Material = .sidebar
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = material
-        v.blendingMode = .behindWindow
-        v.state = .followsWindowActiveState
-        return v
-    }
-    func updateNSView(_ v: NSVisualEffectView, context: Context) { v.material = material }
 }
 
 // MARK: - Window background
@@ -120,8 +102,9 @@ struct GlassPage<Content: View>: View {
                 if showsHeader, let pane { PageHeader(pane: pane) }
                 if windowState.isFullScreen, #available(macOS 15.0, *) {
                     Group(subviews: content) { subviews in
-                        if subviews.count >= 3 {
-                            subviews[0]
+                        if subviews.count >= 2 {
+                            let hasHero = subviews.count >= 3
+                            if hasHero { subviews[0] }
                             LazyVGrid(
                                 columns: [
                                     GridItem(.flexible(minimum: 380), spacing: 20, alignment: .top),
@@ -130,20 +113,7 @@ struct GlassPage<Content: View>: View {
                                 alignment: .leading,
                                 spacing: 20
                             ) {
-                                ForEach(subviews.dropFirst()) { sub in
-                                    sub.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                }
-                            }
-                        } else if subviews.count == 2 {
-                            LazyVGrid(
-                                columns: [
-                                    GridItem(.flexible(minimum: 380), spacing: 20, alignment: .top),
-                                    GridItem(.flexible(minimum: 380), spacing: 20, alignment: .top),
-                                ],
-                                alignment: .leading,
-                                spacing: 20
-                            ) {
-                                ForEach(subviews) { sub in
+                                ForEach(hasHero ? Array(subviews.dropFirst()) : Array(subviews)) { sub in
                                     sub.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                 }
                             }
@@ -241,41 +211,6 @@ struct StatusPill: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
             .background(Capsule().fill(color.opacity(0.12)))
-    }
-}
-
-/// Number card for dashboards.
-struct MetricCard: View {
-    let title: String
-    let value: String
-    var detail: String? = nil
-    let symbol: String
-    var color: Color = Theme.blue
-    /// Explanation behind an ⓘ next to the title.
-    var info: String? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                Label(title, systemImage: symbol)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if let info { InfoButton(text: info) }
-            }
-            Text(value)
-                .font(.system(size: 26, weight: .semibold))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            if let detail {
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard()
     }
 }
 

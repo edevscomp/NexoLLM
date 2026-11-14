@@ -1,10 +1,10 @@
+import CryptoKit
 import Foundation
 
 /// Product identity in one place: name, author handle, bundle identifier and links.
 enum Brand {
     static let name = "NexoLLM"
     static let author = "EdevS"
-    static let contributors = "EdevS · Claude · Gemini"
     static let bundleID = "com.edevs.NexoLLM"
     /// Source code (GPL-3.0), releases and issues.
     static let website = URL(string: "https://github.com/edevscomp/NexoLLM")!
@@ -21,7 +21,7 @@ enum Brand {
     }
 }
 
-/// Small file helpers for the private stores (history, memory, stats, log).
+/// Small file helpers for the private stores (history, memory, stats, log) and verified downloads.
 enum SecureFile {
     /// Nothing NexoLLM stores is anywhere near this; a bigger file is corrupt or not ours.
     static let maxReadBytes = 32 * 1024 * 1024
@@ -46,6 +46,42 @@ enum SecureFile {
 
     static func restrict(_ url: URL, mode: Int = 0o600) {
         try? FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+    }
+
+    /// Streaming lowercase SHA-256 hex digest for large files (models, updates).
+    static func sha256(of url: URL) -> String? {
+        guard let fh = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? fh.close() }
+        var hasher = SHA256()
+        while let chunk = try? fh.read(upToCount: 1 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Tiny FIFO-bounded dictionary shared by completion, alternatives and screen caches.
+struct BoundedCache<Key: Hashable, Value> {
+    let limit: Int
+    private var values: [Key: Value] = [:]
+    private var order: [Key] = []
+
+    var isEmpty: Bool { values.isEmpty }
+    var entries: [Key: Value] { values }
+
+    subscript(key: Key) -> Value? {
+        get { values[key] }
+        set {
+            guard let v = newValue else { values.removeValue(forKey: key); order.removeAll { $0 == key }; return }
+            if values[key] == nil {
+                order.append(key)
+                if order.count > limit { values.removeValue(forKey: order.removeFirst()) }
+            }
+            values[key] = v
+        }
+    }
+
+    mutating func removeAll() {
+        values.removeAll()
+        order.removeAll()
     }
 }
 
@@ -86,10 +122,6 @@ enum Fmt {
     }
 
     static func time(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = locale
-        f.timeStyle = .short
-        f.dateStyle = .none
-        return f.string(from: date)
+        date.formatted(.dateTime.hour().minute().locale(locale))
     }
 }

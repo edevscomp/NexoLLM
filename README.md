@@ -33,7 +33,7 @@ Every suggestion, rewrite, translation and summary is computed on your own GPU a
 - **Per-app tone & encrypted memory** — adapts to how you write in each app and keeps short, fading topic notes encrypted at rest with **AES-256-GCM** (key stored in your OS credential store). Password fields and secret tokens are scrubbed and ignored.
 
 <p align="center">
-<img src="showcase/assets/settings.png" width="920" alt="Local GGUF Models and Context settings side by side">
+<img src="showcase/assets/settings.png" width="920" alt="Local GGUF Models and Awareness settings side by side">
 </p>
 
 ## Insights

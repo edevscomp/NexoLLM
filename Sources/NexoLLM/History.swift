@@ -49,6 +49,7 @@ final class History: ObservableObject {
                 entries[i].text = clipped
                 entries[i].date = Date()
                 wordCache[i] = nil
+                bumpMutation()
                 scheduleSave()
                 return
             }
@@ -57,11 +58,12 @@ final class History: ObservableObject {
         if entries.count > maxEntries { entries.removeFirst(entries.count - maxEntries); wordCache.removeAll() }
         currentFieldKey = fieldKey
         currentIndex = entries.count - 1
+        bumpMutation()
         scheduleSave()
     }
 
     func deleteAll() {
-        entries.removeAll(); wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; scheduleSave()
+        entries.removeAll(); wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; bumpMutation(); scheduleSave()
     }
 
     /// Size of the encrypted history file on disk.
@@ -71,39 +73,50 @@ final class History: ObservableObject {
 
     func delete(at indices: IndexSet) {
         for i in indices.sorted(by: >) where i < entries.count { entries.remove(at: i) }
-        wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; scheduleSave()
+        wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; bumpMutation(); scheduleSave()
     }
 
     /// Keeps the `limit` most recent texts.
     func keepRecent(_ limit: Int) {
         guard entries.count > limit else { return }
         entries.removeFirst(entries.count - limit)
-        wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; scheduleSave()
+        wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; bumpMutation(); scheduleSave()
     }
 
     func delete(app: String) {
-        entries.removeAll { $0.app == app }; wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; scheduleSave()
+        entries.removeAll { $0.app == app }; wordCache.removeAll(); currentFieldKey = nil; currentIndex = nil; bumpMutation(); scheduleSave()
     }
 
     // MARK: Vocabulary
 
+    private let vocabLock = NSLock()
     private var vocabulary: Set<String> = []
     private var vocabularyStamp = -1
+    private var mutationCount = 0
+    private var textsSnapshot: [String] = []
+
+    private func bumpMutation() {
+        vocabLock.lock()
+        mutationCount &+= 1
+        textsSnapshot = entries.map(\.text)
+        vocabLock.unlock()
+    }
 
     /// The word appears at least twice in your own writing (so it's yours, not a typo).
     func knows(_ word: String) -> Bool {
         let w = word.lowercased()
         guard w.count >= 3 else { return false }
-        let stamp = entries.count &+ entries.reduce(0) { $0 &+ $1.text.utf8.count }
-        if stamp != vocabularyStamp {
+        vocabLock.lock()
+        defer { vocabLock.unlock() }
+        if mutationCount != vocabularyStamp {
             var counts: [Substring: Int] = [:]
-            for e in entries {
-                for token in e.text.lowercased().split(whereSeparator: { !$0.isLetter }) where token.count >= 3 {
+            for text in textsSnapshot {
+                for token in text.lowercased().split(whereSeparator: { !$0.isLetter }) where token.count >= 3 {
                     counts[token, default: 0] += 1
                 }
             }
             vocabulary = Set(counts.filter { $0.value >= 2 }.map { String($0.key) })
-            vocabularyStamp = stamp
+            vocabularyStamp = mutationCount
         }
         return vocabulary.contains(w)
     }
@@ -180,6 +193,7 @@ final class History: ObservableObject {
               let plain = try? AES.GCM.open(box, using: History.key()),
               let list = try? JSONDecoder().decode([Entry].self, from: plain) else { return }
         entries = list.filter { !History.hasRepetitionLoop($0.text) }
+        bumpMutation()
     }
 
     /// AES key shared by the encrypted local stores (history, memory). Lives in the Keychain, read once.

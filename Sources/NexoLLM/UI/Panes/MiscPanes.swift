@@ -133,7 +133,6 @@ struct AboutPane: View {
 
             VStack(spacing: 4) {
                 Text(L("Made by \(Brand.author). Free and open source (GNU GPL v3).", "Creato da \(Brand.author). Gratuito e open source (GNU GPL v3)."))
-                Text(L("Contributors: \(Brand.contributors)", "Contributors: \(Brand.contributors)"))
                 Button(L("Third-party notices", "Avvisi di terze parti")) {
                     if let url = Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt") { NSWorkspace.shared.open(url) }
                 }

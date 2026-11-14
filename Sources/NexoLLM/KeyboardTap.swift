@@ -9,6 +9,7 @@ final class KeyboardTap {
     var handler: ((CGEvent, CGEventType) -> Bool)?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
+    private var swallowedKeys: Set<Int64> = []
 
     var isRunning: Bool { tap.map { CFMachPortIsValid($0) && CGEvent.tapIsEnabled(tap: $0) } ?? false }
 
@@ -39,16 +40,18 @@ final class KeyboardTap {
         if let tap { CFMachPortInvalidate(tap) }
         source = nil
         tap = nil
+        swallowedKeys.removeAll()
     }
 
     func start() -> Bool {
         if tap != nil { return true }
-        let types: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown, .scrollWheel]
+        let types: [CGEventType] = [.keyDown, .keyUp, .leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
 
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             let me = Unmanaged<KeyboardTap>.fromOpaque(refcon!).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                me.swallowedKeys.removeAll()
                 if let t = me.tap { CGEvent.tapEnable(tap: t, enable: true) }
                 Log.info("tap: disabled by system (\(type == .tapDisabledByTimeout ? "timeout" : "user input")) — re-enabled")
                 return Unmanaged.passUnretained(event)
@@ -56,7 +59,16 @@ final class KeyboardTap {
             if event.getIntegerValueField(.eventSourceUserData) == KeyboardTap.syntheticMarker {
                 return Unmanaged.passUnretained(event)
             }
-            if me.handler?(event, type) == true { return nil }
+            if type == .keyUp {
+                let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+                if me.swallowedKeys.remove(keyCode) != nil { return nil }
+                return Unmanaged.passUnretained(event)
+            }
+            let swallowed = me.handler?(event, type) == true
+            if swallowed && type == .keyDown {
+                me.swallowedKeys.insert(event.getIntegerValueField(.keyboardEventKeycode))
+            }
+            if swallowed { return nil }
             return Unmanaged.passUnretained(event)
         }
 
@@ -114,11 +126,15 @@ enum TextInjector {
         key(CGKeyCode(kVK_Delete), times: count)
     }
 
+    private static var savedSnapshot: Pasteboards.Snapshot?
+    private static var restoreWork: DispatchWorkItem?
+
     /// Paste-based insertion for apps that drop synthetic Unicode key events. The user's clipboard (every item and
     /// format) is put back afterwards, and the temporary text is marked transient so clipboard history apps skip it.
     static func paste(_ text: String) {
         let pb = NSPasteboard.general
-        let saved = Pasteboards.snapshot(pb)
+        if savedSnapshot == nil { savedSnapshot = Pasteboards.snapshot(pb) }
+        restoreWork?.cancel()
         pb.clearContents()
         let item = NSPasteboardItem()
         item.setString(SuggestionText.safeForInsertion(text), forType: .string)
@@ -127,10 +143,12 @@ enum TextInjector {
         pb.writeObjects([item])
         let ours = pb.changeCount
         key(CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            // If the user copied something new meanwhile, leave it alone.
-            guard pb.changeCount == ours else { return }
+        let work = DispatchWorkItem {
+            defer { savedSnapshot = nil; restoreWork = nil }
+            guard pb.changeCount == ours, let saved = savedSnapshot else { return }
             Pasteboards.restore(pb, saved)
         }
+        restoreWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 }

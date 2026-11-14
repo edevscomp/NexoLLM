@@ -1,3 +1,4 @@
+#if DEBUG || NEXO_DEV
 import AppKit
 import SwiftUI
 
@@ -38,7 +39,7 @@ enum UIRender {
             }
             Stats.shared.loadPreview(previewDays, perApp: previewPerApp)
         }
-        let actions = SettingsActions(reloadModel: {}, openAccessibilitySettings: {}, requestScreenRecording: {}, revealModels: {})
+        let actions = SettingsActions.none
         AppStatus.shared.engine = "Ready · gemma-4-E4B.i1-Q4_K_M.gguf"
         AppStatus.shared.modelReady = true
         let theme = dark ? "dark" : "light"
@@ -136,3 +137,4 @@ enum UIRender {
         window.orderOut(nil)
     }
 }
+#endif

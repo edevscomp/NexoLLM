@@ -1,7 +1,6 @@
 import AppKit
 import AVFoundation
 import CoreMedia
-import CryptoKit
 import ScreenCaptureKit
 
 // MARK: - Audio Context plugin (experimental, optional, on-device)
@@ -141,7 +140,9 @@ struct SpeechSegmenter {
                     buffer = preRoll + chunk
                     speechSamples = chunk.count; silenceRun = 0; sinceEmit = buffer.count
                 } else {
-                    preRoll = Array((preRoll + chunk).suffix(Self.rate * 3 / 10))   // 0.3 s before the first word
+                    let cap = Self.rate * 3 / 10   // 0.3 s before the first word
+                    preRoll.append(contentsOf: chunk)
+                    if preRoll.count > cap { preRoll.removeFirst(preRoll.count - cap) }
                 }
                 continue
             }
@@ -263,19 +264,11 @@ final class AudioPlugin: NSObject, ObservableObject {
         Log.info("audio plugin: removed")
     }
 
-    nonisolated static func sha256(of url: URL) -> String? {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? h.close() }
-        var hasher = SHA256()
-        while let chunk = try? h.read(upToCount: 8 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
-
     fileprivate func finished(file: URL) {
         guard let m = pending else { try? FileManager.default.removeItem(at: file); return }
         verifying = true
         Task.detached(priority: .utility) {
-            let ok = AudioPlugin.sha256(of: file) == m.sha256
+            let ok = SecureFile.sha256(of: file) == m.sha256
             await MainActor.run {
                 let me = AudioPlugin.shared
                 me.verifying = false; me.progress = nil; me.task = nil; me.pending = nil
@@ -313,7 +306,8 @@ extension AudioPlugin: URLSessionDownloadDelegate {
                                 totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         MainActor.assumeIsolated {
             let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : (pending?.bytes ?? 1)
-            progress = min(1, Double(totalBytesWritten) / Double(total))
+            let p = min(1, Double(totalBytesWritten) / Double(total))
+            if progress == nil || abs(p - (progress ?? 0)) >= 0.01 || p >= 1 { progress = p }
         }
     }
 
@@ -393,13 +387,11 @@ final class AudioContext: ObservableObject {
     /// Language Whisper heard last (automatic mode keeps transcribing in it when a phrase is ambiguous).
     private var lastLanguage = "it"
     private let gainControl = AmbientGain()
-    private let levelLock = NSLock()
-    private var lastLevelDispatch: TimeInterval = 0
     private var lastUserActivity = Date()
 
     static let maxTranscript = 700
-    /// Listening stops by itself after this long without any typing.
-    static let idleStop: TimeInterval = 60 * 60
+    /// Listening stops by itself after 10 idle minutes without any typing (frees ~750 MB of Whisper GPU memory).
+    static let idleStop: TimeInterval = 10 * 60
 
     private var wanted: Bool { Settings.shared.prefs.micContextEnabled }
 
@@ -422,7 +414,7 @@ final class AudioContext: ObservableObject {
         let ready = MainActor.assumeIsolated { AudioPlugin.shared.isReady }
         guard ready else {
             Settings.shared.prefs.micContextEnabled = false
-            statusText = L("Install the Audio Context plugin first (Settings › Context).",
+            statusText = L("Install the Audio Context plugin first (Settings › Awareness).",
                            "Installa prima il plugin Contesto audio (Impostazioni › Contesto).")
             return
         }
@@ -487,24 +479,12 @@ final class AudioContext: ObservableObject {
         return "en"
     }
 
-    /// Compatibility helper returning `"it-IT"` or `"en-US"`.
-    static func preferredAutoLocale(appItalian: Bool = Settings.shared.prefs.exampleLanguage == .italian,
-                                    preferred: [String] = Locale.preferredLanguages,
-                                    region: String? = Locale.current.region?.identifier) -> String {
-        if appItalian { return "it-IT" }
-        if region == "IT" || preferred.contains(where: { $0.hasPrefix("it") }) { return "it-IT" }
-        return "en-US"
-    }
-
     /// Ordered candidate languages for Whisper automatic mode, putting the most recent heard language first.
     static func allowedLanguages(startingWith primary: String) -> [String] {
         let p = String(primary.prefix(2)).lowercased()
         let head = WhisperEngine.supportedLanguages.contains(p) ? p : "en"
         return [head] + WhisperEngine.supportedLanguages.filter { $0 != head }
     }
-
-    /// The other language of the automatic pair.
-    static func otherLocale(_ id: String) -> String { id.hasPrefix("it") ? "en-US" : "it-IT" }
 
     /// "IT" / "EN" / "ES" / "FR" / "DE" / "PT" for badges.
     var activeLanguageShort: String {
@@ -567,10 +547,15 @@ final class AudioContext: ObservableObject {
         }
         converter = conv
         let queue = micQueue, agc = gainControl
+        var lastMicMeter: TimeInterval = 0
         input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
             let (boosted, level) = agc.process(buffer)
             if let s = Self.resample(boosted, with: conv, to: target) { queue.push(s) }
-            self?.publishLevel(level)
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - lastMicMeter >= 0.08 {
+                lastMicMeter = now
+                self?.publishLevel(level)
+            }
         }
         engine.prepare()
         do { try engine.start() } catch {
@@ -659,12 +644,8 @@ final class AudioContext: ObservableObject {
     }
 
     fileprivate func publishLevel(_ level: Float) {
-        let now = ProcessInfo.processInfo.systemUptime
-        levelLock.lock()
-        guard now - lastLevelDispatch >= 0.065 else { levelLock.unlock(); return }
-        lastLevelDispatch = now
-        levelLock.unlock()
         DispatchQueue.main.async {
+            guard NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) else { return }
             self.packetCount += 1
             self.inputLevel = max(self.inputLevel * 0.45, level)
         }
@@ -693,11 +674,15 @@ final class AudioContext: ObservableObject {
             await MainActor.run {
                 let me = AudioContext.shared   // singleton: no capture of `self` across the detached task
                 guard mySession == me.session, me.isListening else { return }
+                var lastSysMeter: TimeInterval = 0
                 let output = SystemAudioStreamOutput { sample in
-                    let s = AudioContext.floats(sample)
+                    let (s, lvl) = AudioContext.floatsAndLevel(sample)
                     if !s.isEmpty { queue.push(s) }
-                    let lvl = AudioContext.sampleBufferLevel(sample)
-                    if lvl > 0.04 { AudioContext.shared.publishLevel(lvl) }
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if lvl > 0.04, now - lastSysMeter >= 0.08 {
+                        lastSysMeter = now
+                        AudioContext.shared.publishLevel(lvl)
+                    }
                 }
                 let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
                 do {
@@ -719,38 +704,31 @@ final class AudioContext: ObservableObject {
         }
     }
 
-    /// The float samples of a 16 kHz mono ScreenCaptureKit audio buffer.
-    static func floats(_ sampleBuffer: CMSampleBuffer) -> [Float] {
-        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return [] }
+    /// Extracts 16 kHz mono float samples and perceived dB meter level in a single pass.
+    static func floatsAndLevel(_ sampleBuffer: CMSampleBuffer) -> ([Float], Float) {
+        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return ([], 0) }
         var length = 0
         var dataPointer: UnsafeMutablePointer<Int8>?
         guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &dataPointer) == kCMBlockBufferNoErr,
-              let ptr = dataPointer, length >= 4 else { return [] }
+              let ptr = dataPointer, length >= 4 else { return ([], 0) }
         let count = length / MemoryLayout<Float>.size
-        return ptr.withMemoryRebound(to: Float.self, capacity: count) { Array(UnsafeBufferPointer(start: $0, count: count)) }
-            .map { $0.isFinite ? $0 : 0 }
-    }
-
-    static func sampleBufferLevel(_ sampleBuffer: CMSampleBuffer) -> Float {
-        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return 0 }
-        var length = 0
-        var dataPointer: UnsafeMutablePointer<Int8>?
-        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &dataPointer) == kCMBlockBufferNoErr,
-              let ptr = dataPointer, length >= 4 else { return 0 }
-        let floatCount = length / MemoryLayout<Float>.size
-        return ptr.withMemoryRebound(to: Float.self, capacity: floatCount) { floats in
-            var sum: Float = 0, count = 0, idx = 0
-            let step = max(1, floatCount / 64)
-            while idx < floatCount {
-                let s = floats[idx]
-                if s.isFinite { sum += s * s; count += 1 }
-                idx += step
+        return ptr.withMemoryRebound(to: Float.self, capacity: count) { raw in
+            var out = [Float](repeating: 0, count: count)
+            var sum: Float = 0
+            let step = max(1, count / 64)
+            var sampled = 0
+            for i in 0..<count {
+                let v = raw[i].isFinite ? raw[i] : 0
+                out[i] = v
+                if i % step == 0 { sum += v * v; sampled += 1 }
             }
-            guard count > 0 else { return 0 }
-            let db = 20 * log10(max(sqrt(sum / Float(count)), 0.000_01))
-            return min(1, max(0, (db + 52) / 40))
+            guard sampled > 0 else { return (out, 0) }
+            let db = 20 * log10(max(sqrt(sum / Float(sampled)), 0.000_01))
+            return (out, min(1, max(0, (db + 52) / 40)))
         }
     }
+
+    static func floats(_ sampleBuffer: CMSampleBuffer) -> [Float] { floatsAndLevel(sampleBuffer).0 }
 
     /// Stops everything, overwrites the audio still in memory with zeros, frees the speech model and drops
     /// the transcript: nothing heard survives a stop.

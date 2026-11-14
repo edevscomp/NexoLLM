@@ -37,10 +37,12 @@ enum RewriteGuard {
         return copied >= 2 || Double(copied) / Double(own.count) >= 0.5
     }
 
-    /// The answer can safely replace `original`.
+    /// The answer can safely replace `original` (never echoed scaffold, runaway rambling, or catastrophic truncation).
     static func accepts(output: String, original: String, prompt: String, instruction: String) -> Bool {
         let w = words(output)
         guard !w.isEmpty else { return false }
+        let origWords = words(original).count
+        if origWords >= 16, w.count * 4 < origWords { return false }
         if w.count > maxWords(original: original, instruction: instruction) { return false }
         return !leaksPrompt(output: output, prompt: prompt, original: original)
     }

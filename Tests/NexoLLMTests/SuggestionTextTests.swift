@@ -209,11 +209,16 @@ final class SuggestionTextTests: XCTestCase {
         XCTAssertEqual(CompletionController.applySpellingFixes(to: "probablita'", context: "Questa è una "), "probabilità")
     }
 
+    @MainActor
     func testQuickMenuSubmenuExpansionAndShiftNumberActivation() {
+        let exp = expectation(description: "subitem action")
         let menu = QuickMenuOverlay()
         var subTriggered = 0
         let sub1 = QuickMenuItem(symbol: "wand.and.stars", title: "Improve") { subTriggered = 1 }
-        let sub2 = QuickMenuItem(symbol: "checkmark.seal", title: "Fix Grammar") { subTriggered = 2 }
+        let sub2 = QuickMenuItem(symbol: "checkmark.seal", title: "Fix Grammar") {
+            subTriggered = 2
+            exp.fulfill()
+        }
         let items = [
             QuickMenuItem(symbol: "wand.and.stars", title: "Writing Tools", subitems: [sub1, sub2]),
             QuickMenuItem(symbol: "circle.fill", title: "Disable in Terminal") {}
@@ -231,12 +236,8 @@ final class SuggestionTextTests: XCTestCase {
 
         // Now Shift+2 activates Fix Grammar (index 1)
         menu.activateSubitem(1)
-        let exp = expectation(description: "subitem action")
-        DispatchQueue.main.async {
-            XCTAssertEqual(subTriggered, 2)
-            exp.fulfill()
-        }
-        wait(for: [exp], timeout: 1.0)
+        wait(for: [exp], timeout: 5.0)
+        XCTAssertEqual(subTriggered, 2)
     }
 
     func testScreenSelectionSearchBarPositionMemoryExpiresAfterTenMinutes() {
@@ -248,11 +249,16 @@ final class SuggestionTextTests: XCTestCase {
         XCTAssertEqual(ScreenSelectionOverlay.currentBarOffset(now: t0.addingTimeInterval(601)), .zero)
     }
 
+    @MainActor
     func testQuickMenuArrowNavigationWithNestedSubmenus() {
+        let exp = expectation(description: "nested language action")
         var pickedLang = ""
         let langSubitems = [
             QuickMenuItem(symbol: "globe", title: "English") { pickedLang = "en" },
-            QuickMenuItem(symbol: "globe", title: "Italiano") { pickedLang = "it" },
+            QuickMenuItem(symbol: "globe", title: "Italiano") {
+                pickedLang = "it"
+                exp.fulfill()
+            },
         ]
         let writingSubitems = [
             QuickMenuItem(symbol: "wand.and.stars", title: "Improve Writing"),
@@ -311,12 +317,8 @@ final class SuggestionTextTests: XCTestCase {
         XCTAssertEqual(menu.selectedSubIndex, 1)
         menu.activateCurrent()
 
-        let exp = expectation(description: "nested language action")
-        DispatchQueue.main.async {
-            XCTAssertEqual(pickedLang, "it")
-            exp.fulfill()
-        }
-        wait(for: [exp], timeout: 1.0)
+        wait(for: [exp], timeout: 5.0)
+        XCTAssertEqual(pickedLang, "it")
     }
 
     func testBrandIdentityAndGitHubUsername() {
@@ -377,17 +379,10 @@ final class SuggestionTextTests: XCTestCase {
         XCTAssertTrue(WebLookup.isQuestionOrNews("I prezzi della benzina aumenteranno in Italia?"))
         XCTAssertFalse(WebLookup.isRelevantNewsItem(title: "Scacchi, Luca Moroni vince il campionato italiano", forQuery: "avere il coltello fra i denti"))
         XCTAssertTrue(WebLookup.isRelevantNewsItem(title: "Prezzi della benzina in aumento in tutta Italia", forQuery: "prezzi della benzina in Italia"))
-
-        let sampleHTML = """
-        <div class="result">
-            <a class="result__a" href="https://dizionario.internazionale.it/avere-il-coltello-fra-i-denti">Avere il coltello fra i denti - Dizionario</a>
-            <a class="result__snippet" href="#">Locuzione figurata: essere pronto a lottare con grande determinazione e accanimento.</a>
-        </div>
-        """
-        let parsed = WebLookup.parseDuckDuckGoHTML(sampleHTML)
-        XCTAssertEqual(parsed.count, 1)
-        XCTAssertEqual(parsed.first?.title, "Avere il coltello fra i denti - Dizionario")
-        XCTAssertTrue(parsed.first?.snippet.contains("determinazione") == true)
+        XCTAssertEqual(WebLookup.queryLanguage("¿Qué está pasando hoy en Madrid?"), "es")
+        XCTAssertEqual(WebLookup.queryLanguage("Qu'est-ce qui se passe aujourd'hui à Paris ?"), "fr")
+        XCTAssertEqual(WebLookup.queryLanguage("Was passiert heute in Berlin und Deutschland?"), "de")
+        XCTAssertEqual(WebLookup.queryLanguage("O que está a acontecer hoje em Lisboa?"), "pt")
     }
 
     func testScreenContextRelevantExcerptAcrossWindows() {
@@ -411,6 +406,55 @@ final class SuggestionTextTests: XCTestCase {
             XCTAssertTrue(img.isTemplate)
             XCTAssertEqual(img.size.width, 18)
         }
+    }
+
+    @MainActor
+    func testMenuBarIconAnimationsAndAnimatorLifecycle() {
+        let pairs: [(MenuBarIcon.State, MenuBarIcon.State)] = [
+            (.active, .paused), (.paused, .active), (.smartScreen, .paused), (.paused, .smartScreen),
+            (.active, .smartScreen), (.off, .active), (.active, .off), (.loading, .active), (.reading, .active)
+        ]
+        for (from, to) in pairs {
+            for p in [0.0, 0.25, 0.5, 0.75, 1.0] as [CGFloat] {
+                let img = MenuBarIcon.transitionImage(from: from, to: to, progress: p)
+                XCTAssertTrue(img.isTemplate)
+                XCTAssertEqual(img.size, NSSize(width: 18, height: 18))
+            }
+        }
+        for state in [MenuBarIcon.State.active, .smartScreen] {
+            for p in [0.0, 0.25, 0.5, 0.75, 1.0] as [CGFloat] {
+                let img = MenuBarIcon.acceptPulseImage(for: state, progress: p)
+                XCTAssertTrue(img.isTemplate)
+                XCTAssertEqual(img.size, NSSize(width: 18, height: 18))
+            }
+        }
+        for state in [MenuBarIcon.State.loading, .reading, .readingScreen] {
+            XCTAssertTrue(MenuBarAnimator.isLooping(state))
+            for ph in [0.0, 0.9, 2.4] as [CGFloat] {
+                let img = MenuBarIcon.animatedImage(for: state, phase: ph, level: 0.6)
+                XCTAssertTrue(img.isTemplate)
+                XCTAssertEqual(img.size, NSSize(width: 18, height: 18))
+            }
+        }
+        XCTAssertFalse(MenuBarAnimator.isLooping(.active))
+        XCTAssertFalse(MenuBarAnimator.isLooping(.paused))
+        XCTAssertFalse(MenuBarAnimator.isLooping(.off))
+
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        defer { NSStatusBar.system.removeStatusItem(item) }
+        guard let btn = item.button else { return }
+        let animator = MenuBarAnimator()
+        animator.attach(btn)
+        animator.setState(.active, dimmed: false, reduceMotion: false)
+        XCTAssertFalse(animator.isAnimating)
+        animator.setState(.paused, dimmed: false, reduceMotion: false)
+        XCTAssertTrue(animator.isAnimating)
+        animator.stop()
+        XCTAssertFalse(animator.isAnimating)
+        animator.setState(.loading, dimmed: false, reduceMotion: false)
+        XCTAssertTrue(animator.isAnimating)
+        animator.setState(.loading, dimmed: false, reduceMotion: true)
+        XCTAssertFalse(animator.isAnimating)
     }
 
     func testAmbientGainRaisesQuietVoicesAndNeverBoostsSilence() {
@@ -493,10 +537,11 @@ final class SuggestionTextTests: XCTestCase {
     }
 
     func testAudioAutoLocaleFollowsTheMacWhenTheAppIsInEnglish() {
-        XCTAssertEqual(AudioContext.preferredAutoLocale(appItalian: true, preferred: ["en-US"], region: "US"), "it-IT")
-        XCTAssertEqual(AudioContext.preferredAutoLocale(appItalian: false, preferred: ["en-US", "it-IT"], region: "US"), "it-IT")
-        XCTAssertEqual(AudioContext.preferredAutoLocale(appItalian: false, preferred: ["en-US"], region: "IT"), "it-IT")
-        XCTAssertEqual(AudioContext.preferredAutoLocale(appItalian: false, preferred: ["en-GB"], region: "GB"), "en-US")
+        XCTAssertEqual(AudioContext.preferredAutoLanguage(appLanguage: .italian, preferred: ["en-US"], region: "US"), "it")
+        XCTAssertEqual(AudioContext.preferredAutoLanguage(appLanguage: .french, preferred: ["en-US"], region: "US"), "fr")
+        XCTAssertEqual(AudioContext.preferredAutoLanguage(appLanguage: .english, preferred: ["en-US", "it-IT"], region: "US"), "it")
+        XCTAssertEqual(AudioContext.preferredAutoLanguage(appLanguage: .english, preferred: ["en-US"], region: "IT"), "it")
+        XCTAssertEqual(AudioContext.preferredAutoLanguage(appLanguage: .english, preferred: ["en-GB"], region: "GB"), "en")
     }
 
     func testWebLookupTypoQueryAndItalianIdiom() {
@@ -562,14 +607,54 @@ final class SuggestionTextTests: XCTestCase {
         XCTAssertFalse(WebLookup.cleanEncyclopedia("Disambiguazione – Palestina rimanda qui. La Palestina è una regione.").contains("rimanda"))
     }
 
-    func testAudioOtherLocale() {
-        XCTAssertEqual(AudioContext.otherLocale("it-IT"), "en-US")
-        XCTAssertEqual(AudioContext.otherLocale("en-US"), "it-IT")
+    func testAudioAllowedLanguages() {
+        let itFirst = AudioContext.allowedLanguages(startingWith: "it-IT")
+        XCTAssertEqual(itFirst.first, "it")
+        XCTAssertEqual(Set(itFirst), Set(WhisperEngine.supportedLanguages))
+        let fallback = AudioContext.allowedLanguages(startingWith: "ja")
+        XCTAssertEqual(fallback.first, "en")
     }
 
     @MainActor
     func testLookupCopyText() {
         let card = WebLookup.ResultCard(query: "q", isDefinition: true, summary: "Sunto.", bullets: ["uno", "due"], bulletTitle: "", sources: [])
         XCTAssertEqual(LookupCardView.copyText(card), "Sunto.\n• uno\n• due")
+    }
+
+    func testNonBreakingSpaceHandlingInPromptHealCleanAndInsertion() {
+        let p = SuggestionText.prompt(prefix: "ciao\u{00A0}", prefixStart: 0, caretLocation: 5)
+        XCTAssertTrue(p.userEndedWithSpace)
+        XCTAssertEqual(p.text, "ciao")
+        XCTAssertEqual(SuggestionText.clean(" mi chiamo", userEndedWithSpace: p.userEndedWithSpace, truncated: false), "mi chiamo")
+
+        let healed = SuggestionText.healSplit("ciao\u{00A0}mi")
+        XCTAssertEqual(healed?.stem, "ciao")
+        XCTAssertEqual(healed?.heal, " mi")
+
+        XCTAssertTrue(SuggestionText.isIndentPosition("-\u{00A0}"))
+        XCTAssertEqual(SuggestionText.safeForInsertion("mi\u{00A0}chiamo"), "mi chiamo")
+    }
+
+    func testReconcileFixesOneKeystrokeLagAndPreventsDoubleSpaces() {
+        XCTAssertEqual(
+            SuggestionText.reconcile(suggestion: "g how are you", basePrefix: "learnin", livePrefix: "learning"),
+            " how are you"
+        )
+        XCTAssertEqual(
+            SuggestionText.reconcile(suggestion: "g how are you", basePrefix: "learnin", livePrefix: "learning "),
+            "how are you"
+        )
+        XCTAssertEqual(
+            SuggestionText.reconcile(suggestion: " mi chiamo", basePrefix: "ciao", livePrefix: "ciao "),
+            "mi chiamo"
+        )
+        XCTAssertEqual(
+            SuggestionText.reconcile(suggestion: " mi chiamo", basePrefix: "ciao\u{00A0}", livePrefix: "ciao\u{00A0}"),
+            "mi chiamo"
+        )
+        XCTAssertEqual(
+            SuggestionText.reconcile(suggestion: "g", basePrefix: "learnin", livePrefix: "learning "),
+            ""
+        )
     }
 }

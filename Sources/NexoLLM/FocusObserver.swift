@@ -6,12 +6,12 @@ import ApplicationServices
 final class FocusObserver {
     var onChange: (() -> Void)?
     private var observer: AXObserver?
-    private var appElement: AXUIElement?
     private var pid: pid_t = 0
     private var pending: DispatchWorkItem?
+    private var workspaceToken: NSObjectProtocol?
 
     init() {
-        NSWorkspace.shared.notificationCenter.addObserver(
+        workspaceToken = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -21,9 +21,15 @@ final class FocusObserver {
         attach(NSWorkspace.shared.frontmostApplication)
     }
 
+    deinit {
+        if let workspaceToken { NSWorkspace.shared.notificationCenter.removeObserver(workspaceToken) }
+        detach()
+    }
+
     private func attach(_ app: NSRunningApplication?) {
-        guard let app, app.processIdentifier != pid,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        guard let app else { detach(); return }
+        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier { detach(); return }
+        guard app.processIdentifier != pid else { return }
         detach()
         pid = app.processIdentifier
         var obs: AXObserver?
@@ -33,25 +39,20 @@ final class FocusObserver {
         }
         guard AXObserverCreate(pid, callback, &obs) == .success, let obs else { return }
         let el = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(el, 0.25)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for n in [kAXFocusedUIElementChangedNotification, kAXFocusedWindowChangedNotification] {
             AXObserverAddNotification(obs, el, n as CFString, refcon)
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
         observer = obs
-        appElement = el
     }
 
     private func detach() {
         if let obs = observer {
-            if let el = appElement {
-                for n in [kAXFocusedUIElementChangedNotification, kAXFocusedWindowChangedNotification] {
-                    AXObserverRemoveNotification(obs, el, n as CFString)
-                }
-            }
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
         }
-        observer = nil; appElement = nil; pid = 0
+        observer = nil; pid = 0
     }
 
     /// Coalesces bursts of notifications into one callback.

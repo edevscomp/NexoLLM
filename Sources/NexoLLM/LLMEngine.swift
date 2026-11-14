@@ -25,11 +25,23 @@ final class LLMEngine: @unchecked Sendable {
     /// bump `generation`, never this: closing the lookup bar must not kill the answer being written.
     let taskGeneration = Generation()
     var onStateChange: ((State) -> Void)?
-    private(set) var state: State = .idle {
-        didSet { let s = state; DispatchQueue.main.async { self.onStateChange?(s) } }
+
+    private let stateLock = NSLock()
+    private var _state: State = .idle
+    private var _modelPath = ""
+
+    var state: State {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _state }
+        set {
+            stateLock.lock(); _state = newValue; stateLock.unlock()
+            DispatchQueue.main.async { self.onStateChange?(newValue) }
+        }
     }
     /// Path of the model currently loaded (or last loaded before being unloaded).
-    private(set) var modelPath = ""
+    var modelPath: String {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _modelPath }
+        set { stateLock.lock(); _modelPath = newValue; stateLock.unlock() }
+    }
 
     private let queue = DispatchQueue(label: "nexollm.llm", qos: .userInitiated)
     private var model: OpaquePointer?
@@ -50,25 +62,21 @@ final class LLMEngine: @unchecked Sendable {
 
     /// Per-token flags computed once per model, so sampling never re-decodes token text.
     private struct Flag {
-        static let wordStart: UInt8 = 1    // " word": leading space + a visible character, no newline
+        static let wordStart: UInt8 = 1    // " word": leading space + a visible character, no newline/closing punct
         static let badStart: UInt8 = 2     // empty, control/unused, or contains a line break
-        static let content: UInt8 = 4      // ≥ 3 letters, no punctuation (gets the repetition penalty)
+        static let content: UInt8 = 4      // ≥ 3 Unicode letters, no punctuation (gets the repetition penalty)
         static let eog: UInt8 = 8
         static let digit: UInt8 = 16       // digits (and spaces) only: facts like dates may repeat freely
     }
     private var flags: [UInt8] = []
-    /// Text of every token, flattened (`pieceOffsets[i]..<pieceOffsets[i+1]` in `pieceData`), for token healing.
+    /// Text of every token, flattened (`pieceOffsets[i]..<pieceOffsets[i+1]` in `pieceData`), for token healing & decoding.
     private var pieceData: [UInt8] = []
     private var pieceOffsets: [Int32] = []
-    /// Scratch buffer for the softmax of the top token (allocated once per model).
-    private var probs: [Float] = []
     /// Token length of the last context header (memoized: the header is stable while typing in a field).
     private var headerMemo: (text: String, tokens: Int) = ("", 0)
-    /// Penalties only look at tokens from here on: the draft. The context header (screen, other fields,
-    /// clipboard…) holds facts the model *should* copy — never penalize repeating them.
+    /// Penalties only look at tokens from here on: the draft. The context header holds facts the model *should* copy.
     private var penaltyFrom = 0
-    /// A word whose first token has a probability below this is not suggested (the suggestion ends
-    /// before it): a wrong guess is worse than a shorter suggestion.
+    /// A word whose first token has a probability below this is not suggested (the suggestion ends before it).
     private let uncertainWord: Float = 0.06
 
     // MARK: Loading
@@ -76,6 +84,7 @@ final class LLMEngine: @unchecked Sendable {
     func load(path: String, completion: (() -> Void)? = nil) {
         state = .loading
         modelPath = path
+        generation.next(); specGeneration.next(); taskGeneration.next()
         queue.async { [self] in
             defer { if let completion { DispatchQueue.main.async(execute: completion) } }
             unloadLocked()
@@ -95,7 +104,6 @@ final class LLMEngine: @unchecked Sendable {
             }
             var mp = llama_model_default_params()
             mp.n_gpu_layers = 999
-            // Default load mode memory-maps the weights: fast reloads straight from the page cache.
             guard let m = llama_model_load_from_file(path, mp) else {
                 state = .failed("Could not load model (unsupported or corrupted GGUF)"); return
             }
@@ -106,7 +114,6 @@ final class LLMEngine: @unchecked Sendable {
             cp.n_seq_max = 1
             cp.swa_full = true          // needed to roll the cache back to an arbitrary prefix
             cp.no_perf = true
-            // The GPU does the heavy lifting: 2 CPU threads for token-by-token decoding, up to 4 for prompts.
             let cores = ProcessInfo.processInfo.activeProcessorCount
             cp.n_threads = Int32(max(1, min(2, cores - 2)))
             cp.n_threads_batch = Int32(max(1, min(4, cores - 2)))
@@ -132,7 +139,6 @@ final class LLMEngine: @unchecked Sendable {
             nVocab = Int(llama_vocab_n_tokens(vocab))
             buildFlagsLocked()
             cached = []
-            // Warm up so the first real suggestion is fast.
             _ = generateLocked(prompt: "Hello", maxTokens: 1, id: nil)
             state = .ready((path as NSString).lastPathComponent)
         }
@@ -145,30 +151,40 @@ final class LLMEngine: @unchecked Sendable {
         var data: [UInt8] = []
         data.reserveCapacity(nVocab * 7)
         var offsets = [Int32](repeating: 0, count: nVocab + 1)
+        let closingScalars: Set<Unicode.Scalar> = [",", ".", ";", ":", "!", "?", ")", "…", "—", "–", "»", "”", "]"]
         defer { pieceData = data; pieceOffsets = offsets }
         for i in 0..<nVocab {
             defer { offsets[i + 1] = Int32(data.count) }
             let t = llama_token(i)
-            if llama_vocab_is_eog(vocab, t) { out[i] = Flag.eog | Flag.badStart; continue }
-            let n = Int(llama_token_to_piece(vocab, t, &buf, Int32(buf.count), 0, false))
-            guard n > 0 else { out[i] = Flag.badStart; continue }
-            for j in 0..<n { data.append(UInt8(bitPattern: buf[j])) }
-            var f: UInt8 = 0
-            var letters = 0, visible = false, newline = false, punct = false, digits = 0, other = 0
-            for j in 0..<n {
-                let b = UInt8(bitPattern: buf[j])
-                if b == 10 || b == 13 { newline = true }
-                if b > 32 { visible = true }
-                if (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b >= 128 { letters += 1 }
-                if b == 46 || b == 44 || b == 59 || b == 58 || b == 33 || b == 63 { punct = true }
-                if b >= 48 && b <= 57 { digits += 1 } else if b != 32 { other += 1 }
+            if llama_vocab_is_eog(vocab, t) || llama_vocab_is_control(vocab, t) { out[i] = Flag.eog | Flag.badStart; continue }
+            var n = Int(llama_token_to_piece(vocab, t, &buf, Int32(buf.count), 0, false))
+            if n < 0 {
+                var big = [CChar](repeating: 0, count: -n)
+                n = Int(llama_token_to_piece(vocab, t, &big, Int32(big.count), 0, false))
+                if n > 0 { for j in 0..<n { data.append(UInt8(bitPattern: big[j])) } }
+            } else if n > 0 {
+                for j in 0..<n { data.append(UInt8(bitPattern: buf[j])) }
             }
+            guard n > 0 else { out[i] = Flag.badStart; continue }
+            let slice = data[(data.count - n)..<data.count]
+            var f: UInt8 = 0
+            let newline = slice.contains(10) || slice.contains(13)
+            let visible = slice.contains { $0 > 32 }
             if newline { f |= Flag.badStart }
-            // " ." / " )" lead with a space but aren't a word: after a typed space (e.g. right after a link) they'd
-            // be picked first and then rejected by `SuggestionText.clean`, leaving no suggestion at all.
-            let firstVisible = (0..<n).lazy.map { UInt8(bitPattern: buf[$0]) }.first { $0 != 32 }
-            let closing = firstVisible.map { [44, 46, 59, 58, 33, 63, 41].contains($0) } ?? false
-            if UInt8(bitPattern: buf[0]) == 32, visible, !newline, !closing { f |= Flag.wordStart }
+            let str = String(decoding: slice, as: UTF8.self)
+            var letters = 0, punct = false, digits = 0, other = 0
+            var firstVisibleScalar: Unicode.Scalar?
+            for sc in str.unicodeScalars {
+                if sc.value != 32 && firstVisibleScalar == nil { firstVisibleScalar = sc }
+                if sc.properties.isAlphabetic { letters += 1; other += 1 }
+                else if sc.value >= 48 && sc.value <= 57 { digits += 1 }
+                else if sc.value != 32 {
+                    other += 1
+                    if closingScalars.contains(sc) || sc.properties.generalCategory == .otherPunctuation { punct = true }
+                }
+            }
+            let closing = firstVisibleScalar.map { closingScalars.contains($0) } ?? false
+            if slice.first == 32, visible, !newline, !closing { f |= Flag.wordStart }
             if letters >= 3, !punct, !newline { f |= Flag.content }
             if digits > 0, other == 0 { f |= Flag.digit }
             out[i] = f
@@ -179,8 +195,9 @@ final class LLMEngine: @unchecked Sendable {
     /// Frees the model's memory (weights + KV cache) while keeping the path for a quick reload.
     func unload() {
         guard case .ready(let name) = state else { return }
-        generation.next(); specGeneration.next()
+        generation.next(); specGeneration.next(); taskGeneration.next()
         queue.async { [self] in
+            guard case .ready = state else { return }
             unloadLocked()
             state = .unloaded(name)
         }
@@ -188,14 +205,13 @@ final class LLMEngine: @unchecked Sendable {
 
     /// Frees the model synchronously. Call before the process exits, or ggml-metal asserts.
     func shutdown() {
-        generation.next(); specGeneration.next()
+        generation.next(); specGeneration.next(); taskGeneration.next()
         queue.sync { unloadLocked() }
     }
 
     // MARK: Idle context release
 
-    /// Idle: frees the KV cache and the Metal compute buffers but keeps the memory-mapped weights,
-    /// so waking up costs only the context allocation plus re-reading the prompt (no model reload).
+    /// Idle: frees the KV cache and the Metal compute buffers but keeps the memory-mapped weights.
     func releaseContext() {
         queue.async { [self] in
             guard let c = ctx else { return }
@@ -216,8 +232,8 @@ final class LLMEngine: @unchecked Sendable {
         guard let model else { return false }
         let started = Date()
         guard let c = llama_init_from_model(model, contextParams) else {
-            failureLock.lock(); failureCount += 1; failureLock.unlock()
-            Log.info("engine: could not recreate context (\(failureCount) in a row)")
+            failureLock.lock(); failureCount += 1; let fc = failureCount; failureLock.unlock()
+            Log.info("engine: could not recreate context (\(fc) in a row)")
             return false
         }
         ctx = c
@@ -230,7 +246,7 @@ final class LLMEngine: @unchecked Sendable {
         failureLock.lock(); failureCount = 0; failureLock.unlock()
         if let ctx { llama_free(ctx) }
         if let model { llama_model_free(model) }
-        ctx = nil; model = nil; vocab = nil; cached = []; flags = []; nVocab = 0; probs = []; headerMemo = ("", 0)
+        ctx = nil; model = nil; vocab = nil; cached = []; flags = []; nVocab = 0; headerMemo = ("", 0)
         pieceData = []; pieceOffsets = []
     }
 
@@ -242,17 +258,6 @@ final class LLMEngine: @unchecked Sendable {
         let truncated: Bool
     }
 
-    /// Continues `prompt`. Calls back on the main queue with nil if cancelled or failed.
-    /// `speculative` requests are cancelled only via `specGeneration`.
-    /// `header` is the context part at the start of `prompt`: repetition penalties never apply to it.
-    /// `heal`: the half-typed word removed from the end of `prompt` (with its leading space). The output is
-    /// forced to begin with it, so whole-word tokens stay reachable ("idiom" → "idioma", one token), and the
-    /// returned text starts right after it.
-    /// `instruction`: rewrites, translations and lookup summaries (cancelled via `taskGeneration`). The whole
-    /// prompt (which contains the user's original text) is protected from repetition/DRY penalties — the model
-    /// *must* be free to reuse the user's words — and generation runs to the end of the line, never cut on an
-    /// uncertain word and never pushed past the end of the sentence. Quotes inside the answer (`L'espressione
-    /// "…" significa`) don't stop it: the closing quote is removed afterwards (`CompletionController.rewriteResult`).
     func complete(prompt: String, header: String = "", mustStartWithSpace: Bool = false, heal: String = "",
                   maxTokens: Int, id: Int, speculative: Bool = false, instruction: Bool = false,
                   completion: @escaping (Completion?) -> Void) {
@@ -272,17 +277,15 @@ final class LLMEngine: @unchecked Sendable {
 
     private func generateLocked(prompt: String, header: String = "", mustStartWithSpace: Bool = false, heal: [UInt8] = [],
                                 maxTokens: Int, id: Int?, instruction: Bool = false) -> Completion? {
-        let budget = maxTokens + (heal.isEmpty ? 0 : 4)
-        guard !cancelled(id), let n = prefillLocked(prompt: prompt, reserve: budget, id: id, header: header) else { return nil }
-        if instruction { penaltyFrom = n }   // penalize only repetitions inside the output itself
-        return greedyLocked(first: nil, mustStartWithSpace: mustStartWithSpace, heal: heal, maxTokens: budget, id: id,
+        let reserve = maxTokens + (heal.isEmpty ? 0 : 8)
+        guard !cancelled(id), let n = prefillLocked(prompt: prompt, reserve: reserve, id: id, header: header) else { return nil }
+        if instruction { penaltyFrom = n }
+        return greedyLocked(first: nil, mustStartWithSpace: mustStartWithSpace, heal: heal, maxTokens: maxTokens, id: id,
                             instruction: instruction)
     }
 
     // MARK: Token healing
 
-    /// Token `i` is compatible with the bytes still owed (`need`): it covers them and maybe more, or it is
-    /// a piece of them.
     private func compatible(_ i: Int, _ need: ArraySlice<UInt8>) -> Bool {
         let a = Int(pieceOffsets[i]), b = Int(pieceOffsets[i + 1])
         let len = b - a
@@ -294,7 +297,6 @@ final class LLMEngine: @unchecked Sendable {
         return true
     }
 
-    /// Best tokens compatible with `need`, highest logit first.
     private func healCandidatesLocked(_ logits: UnsafeMutablePointer<Float>, need: ArraySlice<UInt8>, limit: Int) -> [llama_token] {
         guard pieceOffsets.count == nVocab + 1 else { return [] }
         var top: [(Float, Int)] = []
@@ -308,7 +310,6 @@ final class LLMEngine: @unchecked Sendable {
         return top.map { llama_token($0.1) }
     }
 
-    /// Tokens of `header` (minus one: the boundary token may merge with the draft). Memoized.
     private func headerTokensLocked(_ header: String) -> Int {
         guard !header.isEmpty else { return 0 }
         if headerMemo.text == header { return headerMemo.tokens }
@@ -317,9 +318,6 @@ final class LLMEngine: @unchecked Sendable {
         return n
     }
 
-    /// Evaluates `prompt` into the KV cache without generating anything. Used during typing pauses after
-    /// the context header changed, so the next keystroke only pays for its own new tokens. Runs in small
-    /// chunks: any keystroke (which bumps `generation`) cancels it within a few milliseconds.
     func warm(prompt: String, reserve: Int, id: Int) {
         queue.async { [self] in
             activeGen = generation
@@ -331,13 +329,12 @@ final class LLMEngine: @unchecked Sendable {
         }
     }
 
-    /// Evaluates `prompt`, reusing the KV cache for the shared prefix. Returns the prompt length in tokens.
     private func prefillLocked(prompt: String, reserve: Int, id: Int?, chunk chunkSize: Int? = nil, header: String = "") -> Int? {
         guard ensureContextLocked(), let ctx else { return nil }
         var tokens = tokenize(prompt)
         guard !tokens.isEmpty else { return nil }
         var protected = headerTokensLocked(header)
-        let budget = nCtx - reserve - 8
+        let budget = max(16, nCtx - min(reserve, nCtx - 24) - 8)
         if tokens.count > budget {
             protected = max(0, protected - (tokens.count - budget))
             tokens = [tokens[0]] + tokens.suffix(budget - 1)   // keep BOS
@@ -364,10 +361,6 @@ final class LLMEngine: @unchecked Sendable {
         return tokens.count
     }
 
-    /// Repetition penalty on recent content words + n-gram DRY loop blocking, in place on `logits`.
-    /// Punctuation and short function words ("di", "a", "un", ".") are never penalized individually.
-    /// Only the draft counts (from `penaltyFrom`): copying a date or a name from the context is the point,
-    /// not a loop. Digits are exempt from DRY too, so "dal 19 al 23" can be written again.
     private func applyPenaltiesLocked(logits: UnsafeMutablePointer<Float>) {
         let n = cached.count
         guard n > 1, flags.count == nVocab else { return }
@@ -383,7 +376,6 @@ final class LLMEngine: @unchecked Sendable {
             let v = logits[idx]
             logits[idx] = (v > 0 ? v / 1.16 : v * 1.16) - Float(c) * 0.10 - 0.06
         }
-        // DRY: block continuing any 3+ token sequence already present in the recent draft.
         let dryStart = max(floor, n - 160)
         guard dryStart < n - 1 else { return }
         let lastTok = cached[n - 1]
@@ -398,7 +390,6 @@ final class LLMEngine: @unchecked Sendable {
         }
     }
 
-    /// Vectorized argmax over the vocabulary (no 262k-entry candidate array per token).
     private func argmax(_ logits: UnsafeMutablePointer<Float>) -> Int {
         var value: Float = 0
         var index: vDSP_Length = 0
@@ -406,11 +397,6 @@ final class LLMEngine: @unchecked Sendable {
         return Int(index)
     }
 
-    /// Picks the next token. On step 0 it never starts with a line break, and after a typed space
-    /// it must start a new word. Later, returns nil (= end the suggestion here) when the next *word*
-    /// would be a low-confidence guess and the suggestion already has something useful.
-    /// After a sentence/clause ends (`continuePastEnd`), an end-of-message or line break is replaced by the
-    /// most likely next word, so the suggestion flows on until the user decides to stop.
     private func sampleTokenLocked(step: Int, mustStartWithSpace: Bool, stopIfUncertain: Bool = false,
                                    continuePastEnd: Bool = false) -> llama_token? {
         guard let ctx, nVocab > 0, flags.count == nVocab, let logits = llama_get_logits_ith(ctx, -1) else { return nil }
@@ -419,8 +405,14 @@ final class LLMEngine: @unchecked Sendable {
         let needsWord = step > 0 || mustStartWithSpace
         if step > 0 {
             let ends = flags[top] & (Flag.badStart | Flag.eog) != 0
-            if !(ends && continuePastEnd) {
-                if stopIfUncertain, flags[top] & Flag.wordStart != 0, topProbability(logits, top: top) < uncertainWord {
+            if ends && continuePastEnd {
+                // If the model strongly believes the message/thought is complete (>65%), stop cleanly instead of hallucinating.
+                if topProbability(logits, target: top, maxLogit: logits[top]) > 0.65 {
+                    return nil
+                }
+            } else {
+                if stopIfUncertain, flags[top] & Flag.wordStart != 0,
+                   topProbability(logits, target: top, maxLogit: logits[top]) < uncertainWord {
                     return nil
                 }
                 return llama_token(top)
@@ -437,41 +429,37 @@ final class LLMEngine: @unchecked Sendable {
         for i in 0..<nVocab where logits[i] > bestLogit && allowed(i) {
             bestLogit = logits[i]; best = i
         }
-        // Even when the model would rather end here (end of message / new line), offer the best way to go
-        // on: the user decides when the text is over, not the model.
         guard best >= 0 else { return nil }
+        if step > 0, continuePastEnd, topProbability(logits, target: best, maxLogit: logits[top]) < uncertainWord {
+            return nil
+        }
         return llama_token(best)
     }
 
-    /// True right after a punctuation mark: the start of the next clause/sentence is naturally uncertain,
-    /// and stopping there is exactly the "suggestions die after a period" behavior we don't want.
     private func afterPunctuation(_ bytes: [UInt8]) -> Bool {
         guard let last = bytes.last(where: { $0 != 32 }) else { return false }
         return [46, 44, 59, 58, 33, 63].contains(last)   // . , ; : ! ?
     }
 
-    /// Last visible character ends a sentence (". ! ?").
     private func afterSentenceEnd(_ bytes: [UInt8]) -> Bool {
         guard let last = bytes.last(where: { $0 != 32 }) else { return false }
         return last == 46 || last == 33 || last == 63
     }
 
-    /// Softmax probability of `top` (vectorized: one pass of exp over the vocabulary, ~0.2 ms).
-    private func topProbability(_ logits: UnsafeMutablePointer<Float>, top: Int) -> Float {
-        if probs.count != nVocab { probs = [Float](repeating: 0, count: nVocab) }
-        var negMax = -logits[top]
-        var count = Int32(nVocab)
+    /// Zero-allocation softmax probability of `target` given `maxLogit` (only logits within 14 nats matter: e^-14 < 1e-6).
+    private func topProbability(_ logits: UnsafeMutablePointer<Float>, target: Int, maxLogit: Float) -> Float {
+        let targetShift = logits[target] - maxLogit
+        if targetShift < -14 { return 0 }
+        let floor = maxLogit - 14
         var sum: Float = 0
-        probs.withUnsafeMutableBufferPointer { buf in
-            guard let p = buf.baseAddress else { return }
-            vDSP_vsadd(logits, 1, &negMax, p, 1, vDSP_Length(nVocab))
-            vvexpf(p, p, &count)
-            vDSP_sve(p, 1, &sum, vDSP_Length(nVocab))
+        for i in 0..<nVocab {
+            let l = logits[i]
+            if l >= floor { sum += expf(l - maxLogit) }
         }
-        return sum > 0 ? 1 / sum : 1
+        return sum > 0 ? expf(targetShift) / sum : 1
     }
 
-    /// Greedy decoding from the current logits (optionally forcing the first token).
+    /// Greedy decoding from the current logits (healing steps do not consume `maxTokens`).
     private func greedyLocked(first: llama_token?, mustStartWithSpace: Bool = false, heal: [UInt8] = [],
                               maxTokens: Int, id: Int?, instruction: Bool = false) -> Completion? {
         guard let ctx, let vocab else { return nil }
@@ -479,20 +467,20 @@ final class LLMEngine: @unchecked Sendable {
         var truncated = true
         var forced = first
         var hasWord = false
-        var healStep = 0
-        for step in 0..<maxTokens {
+        var healSteps = 0
+        var genSteps = 0
+        while genSteps < maxTokens && healSteps <= 8 {
             if cancelled(id) { return nil }
             let t: llama_token
             let owed = bytes.count < heal.count
             if let f = forced {
                 t = f; forced = nil
             } else if owed {
-                // Still writing the half-typed word: only tokens that agree with it, case included.
                 guard let logits = llama_get_logits_ith(ctx, -1) else { return nil }
                 applyPenaltiesLocked(logits: logits)
                 guard let best = healCandidatesLocked(logits, need: heal[bytes.count...], limit: 1).first else { return nil }
                 t = best
-            } else if let sampled = sampleTokenLocked(step: heal.isEmpty ? step : max(1, step - healStep),
+            } else if let sampled = sampleTokenLocked(step: heal.isEmpty ? genSteps : max(1, genSteps),
                                                       mustStartWithSpace: heal.isEmpty && mustStartWithSpace,
                                                       stopIfUncertain: !instruction && hasWord && !afterPunctuation(bytes),
                                                       continuePastEnd: !instruction && afterSentenceEnd(bytes)) {
@@ -500,15 +488,21 @@ final class LLMEngine: @unchecked Sendable {
             } else {
                 truncated = false; break
             }
-            if llama_vocab_is_eog(vocab, t) { truncated = false; break }
+            if llama_vocab_is_eog(vocab, t) || llama_vocab_is_control(vocab, t) { truncated = false; break }
             let piece = pieceBytes(t)
-            if let nl = piece.firstIndex(of: 10) {   // stop at end of line
+            if let nl = piece.firstIndex(of: 10) {
                 bytes += piece[..<nl]; truncated = false; break
             }
             bytes += piece
-            if owed { healStep = step + 1 }
-            if !hasWord { hasWord = bytes.contains { ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 >= 128 } }
-            guard decode([t], ctx: ctx) else { break }
+            if owed {
+                healSteps += 1
+            } else {
+                genSteps += 1
+                if !hasWord { hasWord = piece.contains { ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || ($0 >= 48 && $0 <= 57) || $0 >= 128 } }
+            }
+            guard decode([t], ctx: ctx) else {
+                llama_memory_clear(llama_get_memory(ctx), true); cached = []; truncated = false; break
+            }
             cached.append(t)
         }
         if !heal.isEmpty {
@@ -516,12 +510,10 @@ final class LLMEngine: @unchecked Sendable {
             bytes.removeFirst(heal.count)
         }
         var text = String(decoding: bytes, as: UTF8.self)
-        while text.hasSuffix("\u{FFFD}") { text.removeLast() }   // cut partial UTF-8
+        while text.hasSuffix("\u{FFFD}") { text.removeLast() }
         return Completion(text: text, truncated: truncated)
     }
 
-    /// Up to `count` different continuations, one per most-likely first token. With `heal` (the half-typed
-    /// word, see `complete`) every candidate agrees with what's already typed.
     func alternatives(prompt: String, header: String = "", mustStartWithSpace: Bool = false, heal: String = "",
                       count: Int, maxTokens: Int, id: Int, completion: @escaping ([Completion]) -> Void) {
         queue.async { [self] in
@@ -529,9 +521,9 @@ final class LLMEngine: @unchecked Sendable {
             var results: [Completion] = []
             defer { activeGen = nil; let r = results; DispatchQueue.main.async { completion(r) } }
             let healBytes = Array(heal.utf8)
-            let budget = maxTokens + (healBytes.isEmpty ? 0 : 4)
+            let reserve = maxTokens + (healBytes.isEmpty ? 0 : 8)
             guard ensureContextLocked(), let ctx, flags.count == nVocab,
-                  let promptLen = prefillLocked(prompt: prompt, reserve: budget, id: id, header: header),
+                  let promptLen = prefillLocked(prompt: prompt, reserve: reserve, id: id, header: header),
                   let logits = llama_get_logits_ith(ctx, -1) else { return }
             applyPenaltiesLocked(logits: logits)
             let limit = count * 5
@@ -539,7 +531,6 @@ final class LLMEngine: @unchecked Sendable {
             if !healBytes.isEmpty {
                 top = healCandidatesLocked(logits, need: healBytes[...], limit: limit)
             } else {
-                // Top candidates by logit (skip end-of-text, line breaks and, after a space, word pieces).
                 var scored: [(Float, llama_token)] = []
                 for i in 0..<nVocab {
                     let l = logits[i]
@@ -553,14 +544,18 @@ final class LLMEngine: @unchecked Sendable {
                 top = scored.map { $0.1 }
             }
             let mem = llama_get_memory(ctx)
-            var seen = Set<String>()
+            var seen = Set<[UInt8]>()
             for t in top where results.count < count {
                 if cancelled(id) { return }
-                let key = String(decoding: pieceBytes(t), as: UTF8.self).trimmingCharacters(in: .whitespaces).lowercased()
-                guard !key.isEmpty, seen.insert(key).inserted else { continue }
-                _ = llama_memory_seq_rm(mem, 0, Int32(promptLen), -1)
-                cached = Array(cached.prefix(promptLen))
-                if let c = greedyLocked(first: t, mustStartWithSpace: mustStartWithSpace, heal: healBytes, maxTokens: budget, id: id),
+                let rawKey = Array(pieceBytes(t)).drop { $0 == 32 }
+                guard !rawKey.isEmpty, seen.insert(Array(rawKey)).inserted else { continue }
+                if llama_memory_seq_rm(mem, 0, Int32(promptLen), -1) {
+                    cached = Array(cached.prefix(promptLen))
+                } else {
+                    llama_memory_clear(mem, true); cached = []
+                    guard prefillLocked(prompt: prompt, reserve: reserve, id: id, header: header) != nil else { return }
+                }
+                if let c = greedyLocked(first: t, mustStartWithSpace: mustStartWithSpace, heal: healBytes, maxTokens: maxTokens, id: id),
                    !c.text.isEmpty || !healBytes.isEmpty {
                     results.append(c)
                 }
@@ -573,16 +568,14 @@ final class LLMEngine: @unchecked Sendable {
         let ok = toks.withUnsafeMutableBufferPointer { buf in
             llama_decode(ctx, llama_batch_get_one(buf.baseAddress, Int32(buf.count))) == 0
         }
-        if ok {
-            if failureCount != 0 { failureLock.lock(); failureCount = 0; failureLock.unlock() }
-        } else {
-            failureLock.lock(); failureCount += 1; failureLock.unlock()
-            Log.info("engine: decode failed (\(failureCount) in a row)")
-        }
+        failureLock.lock()
+        let fc: Int
+        if ok { failureCount = 0; fc = 0 } else { failureCount += 1; fc = failureCount }
+        failureLock.unlock()
+        if !ok { Log.info("engine: decode failed (\(fc) in a row)") }
         return ok
     }
 
-    /// Consecutive GPU decode failures (e.g. Metal state lost after sleep). The app reloads the model when it grows.
     private var failureCount = 0
     private let failureLock = NSLock()
     var consecutiveFailures: Int { failureLock.lock(); defer { failureLock.unlock() }; return failureCount }
@@ -597,19 +590,22 @@ final class LLMEngine: @unchecked Sendable {
             n = llama_tokenize(vocab, text, Int32(utf8Count), &out, Int32(out.count), true, false)
         }
         var toks = n > 0 ? Array(out.prefix(Int(n))) : []
-        // Always ensure <bos> is at index 0 (Gemma 4 attention sink; some GGUFs omit add_bos_token).
         let bos = llama_vocab_bos(vocab)
         if bos >= 0, toks.first != bos { toks.insert(bos, at: 0) }
         return toks
     }
 
-    private func pieceBytes(_ t: llama_token) -> [UInt8] {
+    private func pieceBytes(_ t: llama_token) -> ArraySlice<UInt8> {
+        let i = Int(t)
+        if i >= 0, i + 1 < pieceOffsets.count {
+            return pieceData[Int(pieceOffsets[i])..<Int(pieceOffsets[i + 1])]
+        }
         var buf = [CChar](repeating: 0, count: 64)
         var n = llama_token_to_piece(vocab, t, &buf, Int32(buf.count), 0, false)
         if n < 0 {
             buf = [CChar](repeating: 0, count: Int(-n))
             n = llama_token_to_piece(vocab, t, &buf, Int32(buf.count), 0, false)
         }
-        return n > 0 ? buf.prefix(Int(n)).map { UInt8(bitPattern: $0) } : []
+        return n > 0 ? ArraySlice(buf.prefix(Int(n)).map { UInt8(bitPattern: $0) }) : []
     }
 }

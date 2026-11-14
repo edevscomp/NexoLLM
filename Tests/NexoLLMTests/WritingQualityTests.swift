@@ -162,11 +162,11 @@ final class WritingQualityTests: XCTestCase {
         let panel = FloatingPanel(clickThrough: true)
         let f = NSRect(x: 100, y: 100, width: 120, height: 24)
         XCTAssertFalse(panel.canHide)
-        panel.place(f, entrance: true)
+        panel.place(f)
         XCTAssertEqual(panel.alphaValue, 1)
         panel.hide()
         XCTAssertEqual(panel.alphaValue, 1)
-        panel.place(f, entrance: true)
+        panel.place(f)
         panel.place(f.offsetBy(dx: 4, dy: 0))
         XCTAssertEqual(panel.alphaValue, 1)
         panel.hide()
@@ -293,13 +293,16 @@ final class WritingQualityTests: XCTestCase {
         XCTAssertEqual(L("Language", "Lingua"), "Language")
         XCTAssertEqual(Fmt.status("Ready · model.gguf"), "Ready · model.gguf")
 
-        // Contributors credit includes EdevS, Claude and Gemini across all 6 languages
-        XCTAssertTrue(Brand.contributors.contains("Claude"))
-        XCTAssertTrue(Brand.contributors.contains("Gemini"))
-        for lang in ExampleLanguage.allCases {
+        // System autocorrect example uses the localized "hello/ciao" greeting in every supported language.
+        let expectedGreetings: [ExampleLanguage: String] = [
+            .english: "hello", .italian: "ciao", .spanish: "hola",
+            .french: "salut", .german: "hallo", .portuguese: "olá",
+        ]
+        for (lang, greeting) in expectedGreetings {
             Settings.shared.prefs.exampleLanguage = lang
-            let line = L("Contributors: \(Brand.contributors)", "Contributors: \(Brand.contributors)")
-            XCTAssertTrue(line.contains("EdevS") && line.contains("Claude") && line.contains("Gemini"), "Missing contributors in \(lang)")
+            let desc = L("The blue bubble that replaces a word as you type (\"helo\" → \"hello\"). NexoLLM suggests its own fixes, so you can turn this off too.",
+                         "Il fumetto blu che sostituisce una parola mentre scrivi (\"cao\" → \"ciao\"). NexoLLM propone già le sue correzioni, quindi puoi disattivare anche questo.")
+            XCTAssertTrue(desc.lowercased().contains(greeting), "Expected \(greeting) in \(lang): \(desc)")
         }
 
         // ModalCenter can open and cancel/close BugReport even without typing
@@ -307,6 +310,29 @@ final class WritingQualityTests: XCTestCase {
         XCTAssertEqual(ModalCenter.shared.current, .bugReport)
         ModalCenter.shared.current = nil
         XCTAssertNil(ModalCenter.shared.current)
+    }
+
+    func testMultilingualSpellingAndRewritePolish() {
+        // Valid Spanish, Portuguese and English words must never be "corrected" by Italian accent/typo maps.
+        XCTAssertNil(Spelling.correction(for: "pero", context: "Hola Lucía, quiero ir pero mañana"))
+        XCTAssertNil(Spelling.correction(for: "sucesso", context: "Olá Sofia, o projeto foi um grande sucesso"))
+        XCTAssertNil(Spelling.correction(for: "meta", context: "The project meta file is ready"))
+        // Italian context still gets Italian accent/typo fixes.
+        XCTAssertEqual(Spelling.correction(for: "perche", context: "Ciao Marco, ti scrivo perche domani"), "perché")
+
+        // Multi-line rewrite prefix preservation.
+        let bullet = CompletionController.splitLinePrefix("  - First action item")
+        XCTAssertEqual(bullet.prefix, "  - ")
+        XCTAssertEqual(bullet.body, "First action item")
+        let numbered = CompletionController.splitLinePrefix("2) Second step")
+        XCTAssertEqual(numbered.prefix, "2) ")
+        XCTAssertEqual(numbered.body, "Second step")
+
+        // Capitalization/punctuation polish preserves filenames, URLs and camelCase brands.
+        let polished = CompletionController.polishCapitalizationAndPunctuation("please check config.json and iPhone settings")
+        XCTAssertTrue(polished.hasPrefix("Please check config.json"))
+        XCTAssertTrue(polished.contains("iPhone"))
+        XCTAssertFalse(polished.contains("config. Json"))
     }
 
     func testLinksNeverBlockOrCorruptSuggestions() {

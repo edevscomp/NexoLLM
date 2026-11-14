@@ -310,11 +310,6 @@ private struct CrashReportCard: View {
 
 // MARK: - Interactive tour
 
-extension SettingsActions {
-    /// No-op actions (previews, renders).
-    static let none = SettingsActions(reloadModel: {}, openAccessibilitySettings: {}, requestScreenRecording: {}, revealModels: {})
-}
-
 /// The tour's sample text in one language.
 struct TourExamples {
     let to: String, subject: String
@@ -977,10 +972,10 @@ struct WalkthroughCard: View {
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Capsule().fill(Theme.accent.opacity(0.14)))
                 }
-                Text(L("“What does ‘avere il coltello dalla parte del manico’ mean?”",
+                Text(L("“What does ‘avere il coltello fra i denti’ mean?”",
                        "“Cosa significa ‘avere il coltello fra i denti’?”"))
                     .font(.system(size: 13.5, weight: .semibold))
-                Text(L("It is an Italian idiom meaning to be in a position of advantage or control in a situation, or to face a challenge with fierce determination.",
+                Text(L("It is an Italian idiom meaning to face a challenge, contest or difficult situation with fierce grit and determination.",
                        "È un modo di dire italiano che indica l'affrontare una sfida, una gara o una situazione difficile con estrema grinta, determinazione e combattività."))
                     .font(.system(size: 12.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -1144,6 +1139,7 @@ private struct SetupSlide: View {
                 axTrusted = AX.isTrusted(prompt: false)
                 screen = CGPreflightScreenCaptureAccess()
                 inlinePredictionOn = SystemTextPrefs.isOn(.inlinePrediction)
+                if axTrusted && screen { break }
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
             }
         }

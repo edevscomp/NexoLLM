@@ -61,14 +61,16 @@ final class CompletionController {
     private var tabIndents = false
     private var keyCount = 0
     private let focus = FocusObserver()
+    private var scrollMonitor: Any?
     /// Small cache of recent prompt -> completion results (avoids recomputing identical requests).
-    private var resultCache: [String: LLMEngine.Completion] = [:]
-    private var resultOrder: [String] = []
+    private var resultCache = BoundedCache<String, LLMEngine.Completion>(limit: 12)
     private var lastActivityReport = Date.distantPast
 
     // Tab chaining: keep suggestions flowing while the user accepts with Tab.
     /// Context + full text of the suggestion on screen (for predicting the text after it's accepted).
     private var anchor: (ctx: TextContext, text: String)?
+    /// Prefix when `suggestion` was generated/updated, to reconcile 1-keystroke AX lag or spaces on Tab.
+    private var suggestionPrefix: String?
     /// Where the caret will be once the app has processed what we (or the user) just typed.
     private var predictedCaret: Int?
     /// Until then, Tab/full-accept presses are swallowed: the next suggestion is on its way.
@@ -96,6 +98,7 @@ final class CompletionController {
         var header = ""
         var accepted = false
         var screen: String?
+        var filteredScreen: String?
         var clipboard: String?
         var clipChange = -1
         var examples: [String] = []
@@ -190,10 +193,27 @@ final class CompletionController {
             guard let self, self.prefs.micContextEnabled else { return }
             let live = AudioContext.shared.transcript
             guard live != self.session.audio else { return }
+            // Avoid invalidating the KV cache every 2.5s mid-sentence while actively typing fast.
+            guard self.activity.quietFor > 1.2 || Date().timeIntervalSince(self.session.audioAt) >= 6 else { return }
             self.session.audio = live
             self.session.audioAt = Date()
-            self.resultCache.removeAll(); self.resultOrder.removeAll()
+            self.resultCache.removeAll()
             if let ctx = self.lastContext { self.rebuildHeader(ctx) }
+        }
+    }
+
+    private func updateScrollMonitor() {
+        let needed = ghost.isVisible || list.isVisible
+        if needed, scrollMonitor == nil {
+            scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] _ in
+                guard let self, !self.list.contains(NSEvent.mouseLocation) else { return }
+                self.invalidate()
+                self.list.hide(); self.listKind = .none
+                self.updateScrollMonitor()
+            }
+        } else if !needed, let m = scrollMonitor {
+            NSEvent.removeMonitor(m)
+            scrollMonitor = nil
         }
     }
 
@@ -418,18 +438,22 @@ final class CompletionController {
 
         // Typing the same characters as the suggestion: consume them, no new inference.
         if case let .completion(text, mid, sp) = suggestion, ghost.isVisible,
-           let typed = typedString(event), !typed.isEmpty, text.hasPrefix(typed) {
-            let rest = String(text.dropFirst(typed.count))
-            engine.generation.next(); debounce?.cancel()
-            if rest.trimmingCharacters(in: .whitespaces).isEmpty {
-                invalidate(); scheduleRefresh()
-            } else {
-                suggestion = .completion(text: rest, midLine: mid, endedWithSpace: sp)
-                tabIndents = false
-                predictedCaret = predictedCaret.map { $0 + (typed as NSString).length }
-                repositionAfterInsert()
+           let rawTyped = typedString(event), !rawTyped.isEmpty {
+            let typed = SuggestionText.normalizeSpaces(rawTyped)
+            if text.hasPrefix(typed) {
+                let rest = String(text.dropFirst(typed.count))
+                engine.generation.next(); debounce?.cancel()
+                if rest.trimmingCharacters(in: .whitespaces).isEmpty {
+                    invalidate(); scheduleRefresh()
+                } else {
+                    suggestion = .completion(text: rest, midLine: mid, endedWithSpace: sp)
+                    suggestionPrefix = suggestionPrefix.map { $0 + typed }
+                    tabIndents = false
+                    predictedCaret = predictedCaret.map { $0 + (rawTyped as NSString).length }
+                    repositionAfterInsert()
+                }
+                return false
             }
-            return false
         }
 
         invalidate()
@@ -487,8 +511,10 @@ final class CompletionController {
     }
 
     private func backspace(_ count: Int) {
-        TextInjector.backspace(count)
         browserTypedBuffer = String(browserTypedBuffer.dropLast(count))
+        DispatchQueue.main.async {
+            TextInjector.backspace(count)
+        }
     }
 
     private func escape(app: String) {
@@ -504,9 +530,16 @@ final class CompletionController {
 
     private func insert(_ text: String) {
         guard !text.isEmpty else { return }
-        if settings.config(frontBundleID).compatibility { TextInjector.paste(text) } else { TextInjector.type(text) }
+        let usePaste = text.contains("\n") || settings.config(frontBundleID).compatibility
         if NSWorkspace.shared.frontmostApplication?.processIdentifier == browserTypedPID {
             browserTypedBuffer = String((browserTypedBuffer + text).suffix(600))
+        }
+        DispatchQueue.main.async {
+            if usePaste {
+                TextInjector.paste(text)
+            } else {
+                TextInjector.type(text)
+            }
         }
     }
 
@@ -522,7 +555,14 @@ final class CompletionController {
     private func acceptWord() {
         switch suggestion {
         case let .completion(text, mid, sp):
-            let (word, rest) = SuggestionText.splitNextWord(text, trailingSpace: prefs.trailingSpace)
+            let live = withTypedBuffer(AX.currentContext())?.prefix
+            let reconciled = SuggestionText.reconcile(suggestion: text, basePrefix: suggestionPrefix, livePrefix: live)
+            if reconciled.trimmingCharacters(in: .whitespaces).isEmpty {
+                invalidate()
+                scheduleRefresh()
+                return
+            }
+            let (word, rest) = SuggestionText.splitNextWord(reconciled, trailingSpace: prefs.trailingSpace)
             engine.generation.next(); debounce?.cancel()
             // The user is chaining with Tab: start computing what comes after this suggestion right away.
             if !mid { prefetchNext() }
@@ -536,6 +576,7 @@ final class CompletionController {
             } else {
                 editSeq += 1
                 suggestion = .completion(text: rest, midLine: mid, endedWithSpace: sp)
+                suggestionPrefix = (live ?? suggestionPrefix).map { $0 + word }
                 repositionAfterInsert()
             }
         case .fix, .emoticon:
@@ -548,11 +589,18 @@ final class CompletionController {
     private func acceptAll() {
         switch suggestion {
         case let .completion(text, _, _):
-            insert(text)
-            credit(SuggestionText.wordCount(text), countInStats: true)
-            if !session.memoryIDs.isEmpty { Memory.shared.reinforce(session.memoryIDs, with: text) }
+            let live = withTypedBuffer(AX.currentContext())?.prefix
+            let reconciled = SuggestionText.reconcile(suggestion: text, basePrefix: suggestionPrefix, livePrefix: live)
+            if reconciled.trimmingCharacters(in: .whitespaces).isEmpty {
+                invalidate()
+                scheduleRefresh()
+                return
+            }
+            insert(reconciled)
+            credit(SuggestionText.wordCount(reconciled), countInStats: true)
+            if !session.memoryIDs.isEmpty { Memory.shared.reinforce(session.memoryIDs, with: reconciled) }
             lastAcceptAt = Date()
-            predictedCaret = predictedCaret.map { $0 + (text as NSString).length }
+            predictedCaret = predictedCaret.map { $0 + (reconciled as NSString).length }
             finishChain()
             return
         case let .fix(word, fix, trailing):
@@ -620,9 +668,11 @@ final class CompletionController {
         screenHoldWork?.cancel()
         screenHoldWork = nil
         suggestion = .none
+        suggestionPrefix = nil
         tabIndents = false
         ghost.hide()
         if list.loading { list.hide(); listKind = .none }   // its request was just cancelled: never leave it stuck
+        updateScrollMonitor()
         editSeq += 1
         anchor = nil
         if !keepSpeculation {
@@ -752,6 +802,7 @@ final class CompletionController {
             ghost.hide()
         }
         updateStatus(ctx, state: .active)
+        updateScrollMonitor()
     }
 
     // MARK: Status (menu bar icon)
@@ -1159,7 +1210,7 @@ final class CompletionController {
         return result.contains(" ") ? polishCapitalizationAndPunctuation(result) : result
     }
 
-    /// Capitalizes sentence starts (start of text and after `. `, `! `, `? `) and adds natural comma after greetings (`"Ciao mi chiamo"` -> `"Ciao, mi chiamo"`).
+    /// Capitalizes sentence starts (start of text and after `. `, `! `, `? `, `\n` — never inside `config.json` or URLs).
     static func polishCapitalizationAndPunctuation(_ text: String) -> String {
         guard !text.isEmpty else { return text }
         var chars = Array(text)
@@ -1167,12 +1218,20 @@ final class CompletionController {
         for i in 0..<chars.count {
             if chars[i].isLetter {
                 if capitalizeNext {
-                    let up = String(chars[i]).uppercased()
-                    if let first = up.first { chars[i] = first }
+                    // Skip URLs/domains/camelCase tokens ("https://...", "iPhone", "macOS").
+                    var end = i
+                    while end < chars.count, !chars[end].isWhitespace { end += 1 }
+                    let token = String(chars[i..<end])
+                    let hasMidCap = token.dropFirst().contains { $0.isUppercase }
+                    if !hasMidCap && !Spelling.isURLToken(Substring(token)) {
+                        if let first = String(chars[i]).uppercased().first { chars[i] = first }
+                    }
                     capitalizeNext = false
                 }
-            } else if chars[i] == "." || chars[i] == "!" || chars[i] == "?" || chars[i] == "\n" {
+            } else if chars[i] == "\n" {
                 capitalizeNext = true
+            } else if chars[i] == "." || chars[i] == "!" || chars[i] == "?" {
+                if i + 1 < chars.count, chars[i + 1].isWhitespace { capitalizeNext = true }
             }
         }
         var out = String(chars)
@@ -1190,45 +1249,37 @@ final class CompletionController {
         return out
     }
 
-    /// Builds a language-matched few-shot rewrite prompt so local 1B–9B models never mix English into Italian (or vice versa)
-    /// and accurately translate into any target language (`Español`, `Français`, `Deutsch`, `Português`, `Italiano`, `English`).
-    /// The examples are deliberately plain (a file, a meeting, the weather) and contain no people or biographies: small
-    /// models sometimes echo an example, and `RewriteGuard` rejects any answer that borrows from them.
+    private static let translationTable: [(keys: [String], name: String, label: String, a: String, b: String)] = [
+        (["spanish", "español", "espanol"], "Spanish", "Español",
+         "Mañana por la tarde llueve, así que la reunión pasa a ser en línea.",
+         "El archivo está listo, te lo envío después de comer."),
+        (["french", "français", "francais"], "French", "Français",
+         "Demain après-midi il pleut, donc la réunion se fera en ligne.",
+         "Le fichier est prêt, je te l'envoie après le déjeuner."),
+        (["german", "deutsch"], "German", "Deutsch",
+         "Morgen Nachmittag regnet es, deshalb findet das Treffen online statt.",
+         "Die Datei ist fertig, ich schicke sie dir nach dem Mittagessen."),
+        (["portuguese", "português", "portugues"], "Portuguese", "Português",
+         "Amanhã à tarde vai chover, por isso a reunião passa a ser online.",
+         "O arquivo está pronto, envio depois do almoço."),
+    ]
+
     static func buildRewritePrompt(text: String, instruction: String, language: String? = nil) -> String {
+        let cleanText = text.replacingOccurrences(of: "\"", with: "'")
         let lower = instruction.lowercased()
         let srcIT = "Domani pomeriggio piove, quindi la riunione si sposta online."
         let srcEN = "The file is ready, I'll send it to you after lunch."
-        func translation(_ intro: String, _ label: String, _ a: String, _ b: String) -> String {
-            """
-            \(intro)
-            Original: "\(srcIT)"
-            \(label): "\(a)"
-            Original: "\(srcEN)"
-            \(label): "\(b)"
-            Original: "\(text)"
-            \(label): "
-            """
-        }
         if lower.contains("translate") {
-            if lower.contains("spanish") || lower.contains("español") || lower.contains("espanol") {
-                return translation("Translate the text into natural Spanish. Output only the Spanish translation inside quotes.", "Español",
-                                   "Mañana por la tarde llueve, así que la reunión pasa a ser en línea.",
-                                   "El archivo está listo, te lo envío después de comer.")
-            }
-            if lower.contains("french") || lower.contains("français") || lower.contains("francais") {
-                return translation("Translate the text into natural French. Output only the French translation inside quotes.", "Français",
-                                   "Demain après-midi il pleut, donc la réunion se fera en ligne.",
-                                   "Le fichier est prêt, je te l'envoie après le déjeuner.")
-            }
-            if lower.contains("german") || lower.contains("deutsch") {
-                return translation("Translate the text into natural German. Output only the German translation inside quotes.", "Deutsch",
-                                   "Morgen Nachmittag regnet es, deshalb findet das Treffen online statt.",
-                                   "Die Datei ist fertig, ich schicke sie dir nach dem Mittagessen.")
-            }
-            if lower.contains("portuguese") || lower.contains("português") || lower.contains("portugues") {
-                return translation("Translate the text into natural Portuguese. Output only the Portuguese translation inside quotes.", "Português",
-                                   "Amanhã à tarde vai chover, por isso a reunião passa a ser online.",
-                                   "O arquivo está pronto, envio depois do almoço.")
+            if let entry = translationTable.first(where: { $0.keys.contains { lower.contains($0) } }) {
+                return """
+                Translate the text into natural \(entry.name). Output only the \(entry.name) translation inside quotes.
+                Original: "\(srcIT)"
+                \(entry.label): "\(entry.a)"
+                Original: "\(srcEN)"
+                \(entry.label): "\(entry.b)"
+                Original: "\(cleanText)"
+                \(entry.label): "
+                """
             }
             if lower.contains("english") {
                 return """
@@ -1237,7 +1288,7 @@ final class CompletionController {
                 English: "It's going to rain tomorrow afternoon, so the meeting is moving online."
                 Original: "Il file è pronto, te lo mando dopo pranzo."
                 English: "\(srcEN)"
-                Original: "\(text)"
+                Original: "\(cleanText)"
                 English: "
                 """
             }
@@ -1247,23 +1298,21 @@ final class CompletionController {
             Italiano: "Il file è pronto, te lo mando dopo pranzo."
             Originale: "It's going to rain tomorrow afternoon, so the meeting is moving online."
             Italiano: "\(srcIT)"
-            Originale: "\(text)"
+            Originale: "\(cleanText)"
             Italiano: "
             """
         }
 
-        let lang = language ?? Spelling.dominantLanguageCode(of: text)
-        func fewShot(_ p: RewriteExamples.Prompt) -> String {
-            var out = p.intro + "\n"
-            for (a, b) in p.pairs { out += "\(p.inLabel): \"\(a)\"\n\(p.outLabel): \"\(b)\"\n" }
-            return out + "\(p.inLabel): \"\(text)\"\n\(p.outLabel): \""
-        }
-        let tool: RewriteExamples.Tool
-        if lower.contains("grammar") || lower.contains("spelling") { tool = .grammar }
-        else if lower.contains("formal") { tool = .formal }
-        else if lower.contains("concise") || lower.contains("shorter") { tool = .shorter }
-        else { tool = .improve }
-        return fewShot(RewriteExamples.prompt(tool, language: lang))
+        let lang = language ?? Spelling.dominantLanguageCode(of: cleanText)
+        let p = RewriteExamples.prompt(
+            (lower.contains("grammar") || lower.contains("spelling")) ? .grammar
+            : lower.contains("formal") ? .formal
+            : (lower.contains("concise") || lower.contains("shorter")) ? .shorter : .improve,
+            language: lang
+        )
+        var out = p.intro + "\n"
+        for (a, b) in p.pairs { out += "\(p.inLabel): \"\(a)\"\n\(p.outLabel): \"\(b)\"\n" }
+        return out + "\(p.inLabel): \"\(cleanText)\"\n\(p.outLabel): \""
     }
 
     /// ISO code of the language a "Translate…" instruction asks for, or nil for every other tool.
@@ -1322,7 +1371,16 @@ final class CompletionController {
         return Spelling.detectedLanguageCode(for: text)
     }
 
+    /// Separates leading indentation / bullet markers (`"- "`, `"* "`, `"1. "`) from a line so multi-line rewrites preserve structure.
+    static func splitLinePrefix(_ line: String) -> (prefix: String, body: String) {
+        if let r = line.range(of: "^\\s*(?:[-*•]\\s+|\\d+[.)]\\s+)?", options: .regularExpression) {
+            return (String(line[r]), String(line[r.upperBound...]))
+        }
+        return ("", line)
+    }
+
     /// Replaces the selection (or the last `replaceDraftCount` characters when nothing was highlighted) with a rewrite.
+    /// Multi-line selections are rewritten line-by-line so paragraphs and bullet lists are never truncated to line 1.
     private func rewriteSelection(_ sel: AX.Selection, instruction: String, replaceDraftCount: Int = 0, trailingWhitespace: String = "") {
         toast.show(L("Rewriting…", "Riscrittura…"), busy: true, nearAX: sel.rect)
         rewriteRequest += 1
@@ -1330,38 +1388,28 @@ final class CompletionController {
         let isGrammar = instruction.lowercased().contains("grammar")
         let rawLanguage = Self.rewriteLanguage(text: sel.text, before: sel.before)
         var spellFixed = Self.applySpellingFixes(to: sel.text, context: sel.before, shorthandLanguage: rawLanguage)
-        // One or two words at the start of a sentence: "cao" → "Ciao".
         let head = sel.before.trimmingCharacters(in: .whitespaces)
-        if !spellFixed.contains(" "), head.isEmpty || ".!?\n".contains(head.last!), let f = spellFixed.first, f.isLowercase {
+        if !spellFixed.contains(" "), !spellFixed.contains("\n"),
+           head.isEmpty || ".!?\n".contains(head.last!),
+           let f = spellFixed.first, f.isLowercase,
+           !spellFixed.dropFirst().contains(where: \.isUppercase),
+           !Spelling.isURLToken(Substring(spellFixed)) {
             spellFixed = f.uppercased() + spellFixed.dropFirst()
         }
-        // Every tool starts from the text with the obvious slips already fixed ("xciao" → "ciao").
         let inputForModel = spellFixed
         let language = Self.rewriteLanguage(text: spellFixed, before: sel.before)
         let startKeys = keyCount
+        let startBundleID = frontBundleID
 
-        let finish: (String?) -> Void = { [weak self] out in
+        let commitFinal: (String?, Bool) -> Void = { [weak self] finalText, wrongLanguage in
             guard let self, reqID == self.rewriteRequest else { return }
-            // Rewrites aren't cancelled by typing anymore (only by a new rewrite): if the text moved on meanwhile,
-            // replacing it now would delete the wrong characters.
-            guard self.keyCount == startKeys,
+            guard self.keyCount == startKeys, self.frontBundleID == startBundleID,
                   self.rewriteTargetStillThere(sel, replaceDraftCount: replaceDraftCount, trailingWhitespace: trailingWhitespace) else {
                 self.toast.show(L("The text changed: rewrite cancelled", "Il testo è cambiato: riscrittura annullata"),
                                 symbol: "arrow.uturn.backward", nearAX: sel.rect, duration: 1.8)
                 return
             }
-            var finalOut = Self.rewriteResult(out)
-            var wrongLanguage = false
-            if let cand = finalOut, Self.hasUnwantedLanguageSwitch(original: spellFixed, output: cand, instruction: instruction, language: language) {
-                wrongLanguage = true
-                // Never insert a mixed-language or wrong-language text. For rewrites in the same language, the
-                // deterministic spelling/punctuation pass is still a safe improvement.
-                finalOut = Self.translationTarget(instruction) == nil && spellFixed != sel.text ? spellFixed : nil
-            }
-            if isGrammar, (finalOut == nil || finalOut == sel.text), spellFixed != sel.text {
-                finalOut = spellFixed
-            }
-            guard let text = finalOut else {
+            guard let text = finalText, !text.isEmpty else {
                 self.toast.show(wrongLanguage
                                 ? L("The model answered in the wrong language. Try again or switch to a more capable model.",
                                     "Il modello ha risposto nella lingua sbagliata. Riprova o passa a un modello più capace.")
@@ -1370,51 +1418,98 @@ final class CompletionController {
                 return
             }
             self.toast.hide()
-            if replaceDraftCount > 0 {
-                self.backspace(replaceDraftCount)
-            }
+            if replaceDraftCount > 0 { self.backspace(replaceDraftCount) }
             self.insert(text + trailingWhitespace)
             self.credit(SuggestionText.wordCount(text))
         }
-        // One or two words: correcting is all there is to do; the model is never asked to "improve" them.
+
         if RewriteGuard.isTooShortToRewrite(sel.text, instruction: instruction) {
-            if spellFixed != sel.text { finish(spellFixed) } else {
+            if spellFixed != sel.text { commitFinal(spellFixed, false) } else {
                 toast.show(L("Nothing to change here", "Niente da cambiare qui"), symbol: "checkmark", nearAX: sel.rect, duration: 1.4)
             }
             return
         }
         guard prepareModel() else {
-            if isGrammar, spellFixed != sel.text {
-                finish(spellFixed)
-                return
-            }
+            if isGrammar, spellFixed != sel.text { commitFinal(spellFixed, false); return }
             toast.show(L("The model isn't available", "Il modello non è disponibile"), symbol: "exclamationmark.triangle", nearAX: sel.rect)
             return
         }
+
+        let lines = inputForModel.components(separatedBy: "\n")
+        if lines.count > 1 {
+            let id = engine.taskGeneration.next()
+            var outLines = Array(repeating: "", count: lines.count)
+            var anyChanged = spellFixed != sel.text
+            var anyWrongLang = false
+            func step(_ idx: Int) {
+                guard reqID == self.rewriteRequest else { return }
+                if idx >= lines.count {
+                    let joined = outLines.joined(separator: "\n")
+                    commitFinal(anyChanged || Self.translationTarget(instruction) != nil ? joined : nil, anyWrongLang)
+                    return
+                }
+                let (lead, body) = Self.splitLinePrefix(lines[idx])
+                guard body.contains(where: \.isLetter) else { outLines[idx] = lines[idx]; step(idx + 1); return }
+                if RewriteGuard.isTooShortToRewrite(body, instruction: instruction) {
+                    outLines[idx] = lead + body; step(idx + 1); return
+                }
+                let prompt = Self.buildRewritePrompt(text: body, instruction: instruction, language: language)
+                let budget = max(80, Int(Double(body.count) * 0.9) + 32)
+                engine.complete(prompt: prompt, maxTokens: budget, id: id, instruction: true) { [weak self] res in
+                    guard let self, reqID == self.rewriteRequest else { return }
+                    if res?.truncated != true, let cand = Self.rewriteResult(res?.text),
+                       RewriteGuard.accepts(output: cand, original: body, prompt: prompt, instruction: instruction) {
+                        if Self.hasUnwantedLanguageSwitch(original: body, output: cand, instruction: instruction, language: language) {
+                            anyWrongLang = true
+                            outLines[idx] = lead + body
+                        } else {
+                            outLines[idx] = lead + cand
+                            if cand != body { anyChanged = true }
+                        }
+                    } else {
+                        outLines[idx] = lead + body
+                    }
+                    step(idx + 1)
+                }
+            }
+            step(0)
+            return
+        }
+
         let id = engine.taskGeneration.next()
         let prompt = Self.buildRewritePrompt(text: inputForModel, instruction: instruction, language: language)
         let tokenBudget = max(80, Int(Double(sel.text.count) * 0.9) + 32)
         engine.complete(prompt: prompt, maxTokens: tokenBudget, id: id, instruction: true) { [weak self] result in
             guard let self, reqID == self.rewriteRequest else { return }
-            // An answer that echoes the prompt's examples or runs far past the original never reaches the field.
-            if let out = Self.rewriteResult(result?.text),
-               !RewriteGuard.accepts(output: out, original: inputForModel, prompt: prompt, instruction: instruction) {
-                Log.write("rewrite: rejected by RewriteGuard")
-                finish(isGrammar && spellFixed != sel.text ? spellFixed : nil)
+            guard result?.truncated != true else {
+                commitFinal(isGrammar && spellFixed != sel.text ? spellFixed : nil, false)
                 return
             }
-            finish(result?.text)
+            var finalOut = Self.rewriteResult(result?.text)
+            if let cand = finalOut, !RewriteGuard.accepts(output: cand, original: inputForModel, prompt: prompt, instruction: instruction) {
+                Log.write("rewrite: rejected by RewriteGuard")
+                finalOut = isGrammar && spellFixed != sel.text ? spellFixed : nil
+            }
+            var wrongLanguage = false
+            if let cand = finalOut, Self.hasUnwantedLanguageSwitch(original: spellFixed, output: cand, instruction: instruction, language: language) {
+                wrongLanguage = true
+                finalOut = Self.translationTarget(instruction) == nil && spellFixed != sel.text ? spellFixed : nil
+            }
+            if isGrammar, (finalOut == nil || finalOut == sel.text), spellFixed != sel.text {
+                finalOut = spellFixed
+            }
+            commitFinal(finalOut, wrongLanguage)
         }
     }
 
-    /// The rewrite up to the model's closing quote, trimmed; nil when empty.
-    /// The text a rewrite will replace is still exactly where it was (same draft before the caret / same selection).
+    /// Verifies the text to replace is still in the exact same app and field — never blindly backspaces if unreadable!
     private func rewriteTargetStillThere(_ sel: AX.Selection, replaceDraftCount: Int, trailingWhitespace: String) -> Bool {
         if replaceDraftCount > 0 {
-            guard let now = withTypedBuffer(AX.currentContext()) else { return true }   // unreadable: the key count decides
+            guard let now = withTypedBuffer(AX.currentContext()), now.bundleID == sel.bundleID else { return false }
             return now.prefix.hasSuffix(sel.text + trailingWhitespace)
         }
-        return AX.currentSelection(maxChars: 1000, maxWords: 180)?.text == sel.text
+        guard let cur = AX.currentSelection(maxChars: 1000, maxWords: 180) else { return false }
+        return cur.bundleID == sel.bundleID && cur.text == sel.text
     }
 
     /// The answer is the first line, up to its closing quote. Quotes inside it are kept: with an odd number of
@@ -1449,7 +1544,7 @@ final class CompletionController {
     /// Starts/stops Audio Context; before the plugin is installed (with consent) it points to where to do it.
     func toggleAudioContext() {
         if !prefs.micContextEnabled, !MainActor.assumeIsolated({ AudioPlugin.shared.isReady }) {
-            toast.show(L("Install the Audio Context plugin first: Settings › Context", "Installa prima il plugin Contesto audio: Impostazioni › Contesto"),
+            toast.show(L("Install the Audio Context plugin first: Settings › Awareness", "Installa prima il plugin Contesto audio: Impostazioni › Contesto"),
                        symbol: "waveform.badge.mic", nearAX: nil, duration: 2.6)
             onOpenSettings?()
             return
@@ -1476,15 +1571,6 @@ final class CompletionController {
     }
 
     // MARK: Menu (menu bar icon and quick menu share it)
-
-    /// Short status word for the menu header ("Ready", "Paused until 15:40", "Off"...).
-    private func statusWord(_ engine: String) -> String {
-        if prefs.globallyDisabled { return L("Off", "Spento") }
-        if let end = snoozeEndText { return L("Paused until \(end)", "In pausa fino alle \(end)") }
-        if engine.hasPrefix("Error") { return L("Needs attention", "Richiede attenzione") }
-        let word = engine.components(separatedBy: " · ").first ?? engine
-        return Fmt.status(word.trimmingCharacters(in: .whitespaces))
-    }
 
     /// The menu bar dropdown: a compact status header card followed by native actions and a native Pause submenu.
     func menuItems(status engine: String, accessibilityMissing: Bool = false,
@@ -1631,6 +1717,7 @@ final class CompletionController {
             } ?? ScreenContext.shared.pinned(pid: ctx.pid)
             session.screen = snap?.text
             session.screenManual = snap?.manual ?? false
+            session.filteredScreen = Self.filterScreen(session.screen, forDraft: ctx.prefix, manual: session.screenManual)
             if prefs.useWindowFields {
                 let started = Date()
                 let fields = AX.windowFields(around: ctx.element)
@@ -1645,7 +1732,7 @@ final class CompletionController {
         if audioDue {
             session.audio = liveAudio
             session.audioAt = Date()
-            resultCache.removeAll(); resultOrder.removeAll()
+            resultCache.removeAll()
         }
         session.clipChange = clipChange
         session.clipboard = prefs.useClipboard ? ContextSources.clipboard() : nil
@@ -1715,6 +1802,7 @@ final class CompletionController {
         if changed, session.fieldKey == key {
             session.screen = text.isEmpty ? nil : text
             session.screenManual = manual && !text.isEmpty
+            session.filteredScreen = Self.filterScreen(session.screen, forDraft: (lastContext?.fieldKey == key ? lastContext?.prefix : nil) ?? "", manual: session.screenManual)
             if let ctx = lastContext, ctx.fieldKey == key {
                 session.memoryChecked = false   // what's on screen can bring back a memory
                 recallMemory(ctx)
@@ -1789,6 +1877,7 @@ final class CompletionController {
                 // Captured without a field: lend it to the field already in use in this app.
                 self.session.screen = text
                 self.session.screenManual = true
+                self.session.filteredScreen = Self.filterScreen(text, forDraft: self.lastContext?.prefix ?? "", manual: true)
                 if let last = self.lastContext, last.fieldKey == self.session.fieldKey { self.rebuildHeader(last) }
             }
             // Show what the new context suggests right away (only if the caret is still in the same field).
@@ -1874,25 +1963,28 @@ final class CompletionController {
         Log.write("memory: recalled \(r.ids.count) for \(ctx.appName)")
     }
 
+    private static func filterScreen(_ screen: String?, forDraft draft: String, manual: Bool) -> String? {
+        guard let text = screen, !text.isEmpty else { return nil }
+        let budget = manual ? 2400 : 1800
+        let prefixWords = Set(draft.suffix(400).lowercased().split(whereSeparator: { !$0.isLetter }).filter { $0.count > 3 })
+        let relevant = ScreenContext.relevantExcerpt(from: text, forDraft: draft, budget: budget)
+        let out = relevant.split(separator: "\n").filter { line in
+            guard !draft.contains(line) else { return false }
+            let lw = line.lowercased().split(whereSeparator: { !$0.isLetter }).filter { $0.count > 3 }
+            guard lw.count >= 2 else { return true }
+            return Double(lw.filter { prefixWords.contains($0) }.count) / Double(lw.count) < 0.6
+        }.joined(separator: "\n")
+        return out.isEmpty ? nil : out
+    }
+
     private func rebuildHeader(_ ctx: TextContext) {
-        let prefixWords = Set(ctx.prefix.suffix(400).lowercased().split(whereSeparator: { !$0.isLetter }).filter { $0.count > 3 })
         let budget = session.screenManual ? 2400 : 1800
-        let screen = session.screen.map { text in
-            let relevant = ScreenContext.relevantExcerpt(from: text, forDraft: ctx.prefix, budget: budget)
-            return relevant.split(separator: "\n").filter { line in
-                guard !ctx.prefix.contains(line) else { return false }
-                let lw = line.lowercased().split(whereSeparator: { !$0.isLetter }).filter { $0.count > 3 }
-                guard lw.count >= 2 else { return true }
-                let overlap = lw.filter { prefixWords.contains($0) }.count
-                return Double(overlap) / Double(lw.count) < 0.6
-            }.joined(separator: "\n")
-        }
         let clip = session.clipboard.flatMap { c in ctx.prefix.contains(c) ? nil : c }
         let audio = prefs.micContextEnabled && !session.audio.isEmpty ? session.audio : nil
         session.header = SuggestionText.header(
             appName: ctx.appName, instructions: prefs.customInstructions,
             appInstructions: settings.config(ctx.bundleID).instructions,
-            screen: screen, clipboard: clip, examples: session.examples,
+            screen: session.filteredScreen, clipboard: clip, examples: session.examples,
             memory: prefs.memoryEnabled ? session.memory : nil,
             style: session.style, fields: session.fields, audio: audio,
             screenBudget: budget)
@@ -1946,6 +2038,7 @@ final class CompletionController {
                 list.show(header: "Emoji", items: items.map { ListItem(leading: $0.glyph, title: $0.name.isEmpty ? "" : ":\($0.name.replacingOccurrences(of: " ", with: "_")):") },
                           belowAX: ctx.caretRect)
                 updateStatus(ctx, state: .active)
+                updateScrollMonitor()
                 return
             }
         } else if case .emoji = listKind { list.hide(); listKind = .none }
@@ -1981,7 +2074,8 @@ final class CompletionController {
             if !text.isEmpty {
                 engine.generation.next()
                 Log.write("complete: fact from context \(String(reflecting: text))")
-                suggestion = .completion(text: text, midLine: midLine, endedWithSpace: ctx.prefix.last == " ")
+                suggestion = .completion(text: text, midLine: midLine, endedWithSpace: ctx.prefix.last.map(SuggestionText.isHorizontalSpace) ?? false)
+                suggestionPrefix = ctx.prefix
                 anchor = midLine ? nil : (ctx, text)
                 predictedCaret = ctx.caretLocation
                 render(ctx)
@@ -2002,7 +2096,7 @@ final class CompletionController {
             }
             screenHoldWork = work
             updateStatus(ctx, state: .thinking)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
             return
         }
 
@@ -2028,6 +2122,7 @@ final class CompletionController {
             guard let now = current, now.pid == ctx.pid, now.caretLocation == ctx.caretLocation else { return }
             self.lastContext = now
             self.suggestion = .completion(text: text, midLine: midLine, endedWithSpace: prompt.userEndedWithSpace)
+            self.suggestionPrefix = now.prefix
             self.anchor = midLine ? nil : (now, text)
             self.predictedCaret = now.caretLocation
             self.render(now)
@@ -2063,7 +2158,7 @@ final class CompletionController {
         let mic = prefs.micContextEnabled && !AudioContext.shared.transcript.isEmpty ? AudioContext.shared.transcript : nil
         let sources = [session.fields, clip, mic, session.screen].compactMap { $0 }
         guard !sources.isEmpty else { return nil }
-        let endedWithSpace = ctx.prefix.last == " " || ctx.prefix.last == "\t"
+        let endedWithSpace = ctx.prefix.last.map(SuggestionText.isHorizontalSpace) ?? false
         return SuggestionText.contextContinuation(prefix: ctx.prefix, sources: sources, strict: [],
                                                   userEndedWithSpace: endedWithSpace)
     }
@@ -2103,9 +2198,7 @@ final class CompletionController {
     }
 
     private func remember(_ key: String, _ result: LLMEngine.Completion) {
-        if resultCache[key] == nil { resultOrder.append(key) }
         resultCache[key] = result
-        if resultOrder.count > 12 { resultCache[resultOrder.removeFirst()] = nil }
     }
 
     private func reportActivity() {
@@ -2116,7 +2209,7 @@ final class CompletionController {
 
     /// Called once the model is (re)loaded: retry a suggestion at the current caret.
     func modelDidLoad() {
-        resultCache.removeAll(); resultOrder.removeAll()
+        resultCache.removeAll()
         scheduleRefresh(after: 10)
     }
 
@@ -2149,12 +2242,12 @@ final class CompletionController {
         let show: ([String]) -> Void = { [weak self] found in
             guard let self else { return }
             guard gen == self.engine.generation.current else {
-                if request == self.listRequest, self.list.loading { self.list.hide(); self.listKind = .none }
+                if request == self.listRequest, self.list.loading { self.list.hide(); self.listKind = .none; self.updateScrollMonitor() }
                 return
             }
             let items = found.filter { !SuggestionText.isContextLabel($0, appName: ctx.appName, draft: ctx.prefix) }
             guard !items.isEmpty else {
-                self.list.hide(); self.listKind = .none
+                self.list.hide(); self.listKind = .none; self.updateScrollMonitor()
                 self.toast.show(L("No alternatives here", "Nessuna alternativa qui"), symbol: "text.magnifyingglass", nearAX: ctx.caretRect, duration: 1)
                 return
             }
@@ -2165,6 +2258,7 @@ final class CompletionController {
             self.list.show(header: L("Alternatives", "Alternative"),
                            items: items.map { ListItem(leading: "", title: $0.trimmingCharacters(in: .whitespaces)) },
                            belowAX: ctx.caretRect, scope: scope, switchKey: self.prefs.alternativesShortcut.display)
+            self.updateScrollMonitor()
         }
         if let cached = altCache[cacheKey] { show(cached); return }
         guard modelOK else { return }
@@ -2172,6 +2266,7 @@ final class CompletionController {
         ghost.hide()
         listKind = scope == .word ? .words([], replace: partial.count) : .alternatives([])
         list.showLoading(header: L("Alternatives", "Alternative"), belowAX: ctx.caretRect, scope: scope, switchKey: prefs.alternativesShortcut.display)
+        updateScrollMonitor()
         let contextPool = ((session.screen ?? "") + " " + (session.audio)).split(whereSeparator: { !$0.isLetter })
             .map(String.init).filter { $0.count >= 4 }
         let words: ([String]) -> [String] = { found in
@@ -2216,22 +2311,19 @@ final class CompletionController {
     }
 
     /// Recent alternatives by scope + caret, so switching back and forth costs nothing.
-    private var altCache: [String: [String]] = [:]
+    private var altCache = BoundedCache<String, [String]>(limit: 8)
     /// Bumped by every alternatives/synonyms request: a cancelled one only closes its own placeholder.
     private var listRequest = 0
-    private var altOrder: [String] = []
 
     private func rememberAlternatives(_ key: String, _ items: [String]) {
-        if altCache[key] == nil { altOrder.append(key) }
         altCache[key] = items
-        if altOrder.count > 8 { altCache[altOrder.removeFirst()] = nil }
     }
 
     /// Drops every cached result (Settings → Clear Cache).
     func clearCaches() {
-        resultCache.removeAll(); resultOrder.removeAll()
-        altCache.removeAll(); altOrder.removeAll()
-        session.screen = nil; session.fields = nil; session.clipboard = nil; session.audio = ""
+        resultCache.removeAll()
+        altCache.removeAll()
+        session.screen = nil; session.filteredScreen = nil; session.fields = nil; session.clipboard = nil; session.audio = ""
         if let ctx = lastContext { rebuildHeader(ctx) }
     }
 
@@ -2245,8 +2337,8 @@ final class CompletionController {
 
     /// Rough size of the in-memory caches, for Settings.
     var cacheBytes: Int {
-        resultCache.reduce(0) { $0 + $1.key.utf8.count + $1.value.text.utf8.count }
-            + altCache.reduce(0) { $0 + $1.key.utf8.count + $1.value.reduce(0) { $0 + $1.utf8.count } }
+        resultCache.entries.reduce(0) { $0 + $1.key.utf8.count + $1.value.text.utf8.count }
+            + altCache.entries.reduce(0) { $0 + $1.key.utf8.count + $1.value.reduce(0) { $0 + $1.utf8.count } }
     }
 
     // MARK: Word tools: synonyms
@@ -2276,31 +2368,31 @@ final class CompletionController {
             guard !top.isEmpty else { self.list.hide(); self.listKind = .none; return }
             self.listKind = .synonyms(top)
             self.list.show(header: L("Synonyms", "Sinonimi"), items: top.map { ListItem(leading: "", title: $0) }, belowAX: sel.rect)
+            self.updateScrollMonitor()
         }
         guard prepareModel() else { return false }
         listKind = .synonyms([])
         list.showLoading(header: L("Synonyms", "Sinonimi"), belowAX: sel.rect)
-        // Few-shot prompt in the language of the sentence, so the synonyms come back in it.
+        updateScrollMonitor()
         let synLang = Self.rewriteLanguage(text: word, before: sel.before)
-        let prompt: String
-        switch synLang {
-        case "it": prompt = "Sinonimi di \"bello\": carino, grazioso, piacevole, attraente\nSinonimi di \"parlare\": dire, discutere, conversare, esprimersi\nSinonimi di \"\(word)\":"
-        case "es": prompt = "Sinónimos de \"bonito\": hermoso, lindo, agradable, atractivo\nSinónimos de \"hablar\": decir, conversar, dialogar, charlar\nSinónimos de \"\(word)\":"
-        case "fr": prompt = "Synonymes de \"beau\": joli, agréable, charmant, attrayant\nSynonymes de \"parler\": dire, discuter, converser, échanger\nSynonymes de \"\(word)\":"
-        case "de": prompt = "Synonyme für \"schön\": hübsch, angenehm, ansprechend, reizvoll\nSynonyme für \"sprechen\": reden, sich unterhalten, diskutieren, äußern\nSynonyme für \"\(word)\":"
-        case "pt": prompt = "Sinónimos de \"bonito\": belo, agradável, elegante, atraente\nSinónimos de \"falar\": dizer, conversar, dialogar, discutir\nSinónimos de \"\(word)\":"
-        default: prompt = "Synonyms of \"nice\": pleasant, lovely, delightful, kind\nSynonyms of \"talk\": speak, chat, converse, discuss\nSynonyms of \"\(word)\":"
-        }
-        let id = engine.generation.next()
+        let synPrompts: [String: String] = [
+            "it": "Sinonimi di \"bello\": carino, grazioso, piacevole, attraente\nSinonimi di \"parlare\": dire, discutere, conversare, esprimersi\nSinonimi di \"\(word)\":",
+            "es": "Sinónimos de \"bonito\": hermoso, lindo, agradable, atractivo\nSinónimos de \"hablar\": decir, conversar, dialogar, charlar\nSinónimos de \"\(word)\":",
+            "fr": "Synonymes de \"beau\": joli, agréable, charmant, attrayant\nSynonymes de \"parler\": dire, discuter, converser, échanger\nSynonymes de \"\(word)\":",
+            "de": "Synonyme für \"schön\": hübsch, angenehm, ansprechend, reizvoll\nSynonyme für \"sprechen\": reden, sich unterhalten, diskutieren, äußern\nSynonyme für \"\(word)\":",
+            "pt": "Sinónimos de \"bonito\": belo, agradável, elegante, atraente\nSinónimos de \"falar\": dizer, conversar, dialogar, discutir\nSinónimos de \"\(word)\":",
+        ]
+        let prompt = synPrompts[synLang] ?? "Synonyms of \"nice\": pleasant, lovely, delightful, kind\nSynonyms of \"talk\": speak, chat, converse, discuss\nSynonyms of \"\(word)\":"
+        let id = engine.taskGeneration.next()
         listRequest += 1
         let request = listRequest
-        engine.complete(prompt: prompt, maxTokens: 24, id: id) { [weak self] result in
+        engine.complete(prompt: prompt, maxTokens: 28, id: id, instruction: true) { [weak self] result in
             guard let self else { return }
-            guard id == self.engine.generation.current else {
-                if request == self.listRequest, self.list.loading { self.list.hide(); self.listKind = .none }
+            guard id == self.engine.taskGeneration.current else {
+                if request == self.listRequest, self.list.loading { self.list.hide(); self.listKind = .none; self.updateScrollMonitor() }
                 return
             }
-            present(result?.text.split(separator: ",").map(String.init) ?? [])   // empty: closes the placeholder
+            present(result?.text.split(separator: ",").map(String.init) ?? [])
         }
         return true
     }

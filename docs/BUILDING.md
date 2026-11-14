@@ -45,6 +45,7 @@ different name and icon (see [TRADEMARKS.md](../TRADEMARKS.md)).
 | `Updater` | Offline Ed25519 + SHA-256 signed update verification with anti-downgrade protection |
 | `SecureNet` | HTTPS-only sessions, TLS 1.2+, host-restricted redirects |
 | `SystemTextPrefs` | Reversible switches for system inline predictions and autocorrect |
+| `Extras` | Borderless menu bar stencil & zero-idle micro-animations, `⌃⌥L` Web Lookup, crash reporter, network monitor |
 | `UI/` | Aurora/Glass Settings window, soft pastel stacked Insights histogram, and interactive 9-slide Tour |
 
 ## Contributing

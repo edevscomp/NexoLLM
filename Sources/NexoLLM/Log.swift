@@ -47,8 +47,9 @@ enum Log {
 
     /// Rare, important events (launch, model state, permissions, errors). Always written.
     static func info(_ message: String) {
-        let line = "\(formatter.string(from: Date())) \(rawText ? message : redact(message))\n"
+        let now = Date()
         queue.async {
+            let line = "\(formatter.string(from: now)) \(rawText ? message : redact(message))\n"
             guard let data = line.data(using: .utf8) else { return }
             if let h = try? FileHandle(forWritingTo: url) {
                 h.seekToEndOfFile(); h.write(data); try? h.close()

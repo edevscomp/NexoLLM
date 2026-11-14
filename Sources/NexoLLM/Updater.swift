@@ -30,7 +30,9 @@ final class Updater: ObservableObject {
     /// Automatic check: shortly after launch, then once a day (if allowed in Settings).
     func start() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.checkIfDue() }
-        timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in self?.checkIfDue() }
+        let t = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in self?.checkIfDue() }
+        t.tolerance = 600
+        timer = t
     }
 
     private func checkIfDue() {
@@ -117,13 +119,7 @@ final class Updater: ObservableObject {
         Data("NexoLLM-release-v1:\(version):\(sha256.lowercased())".utf8)
     }
 
-    static func sha256Hex(of url: URL) -> String? {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? h.close() }
-        var hasher = SHA256()
-        while let chunk = try? h.read(upToCount: 8 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
+    static func sha256Hex(of url: URL) -> String? { SecureFile.sha256(of: url) }
 
     /// Valid only if `signature` signs this file's SHA-256 *and* `version`, with the embedded key (or `publicKey`
     /// in tests), and `version` is newer than the installed one (no downgrades).

@@ -46,7 +46,7 @@ struct ContextPane: View {
             GlassSection(L("Experimental plugin · Audio Context", "Plugin sperimentale · Contesto audio")) {
                 audioPluginSection
             }
-            GlassSection("Privacy Inspector") {
+            GlassSection(L("Privacy Inspector", "Ispettore privacy")) {
                 Text(L("Exactly what NexoLLM holds in memory right now, nothing else. Screenshots and audio are discarded as soon as their text is read; password fields are never read. None of this is written to disk and none of it is sent anywhere: it is all processed on this computer.",
                        "Esattamente ciò che NexoLLM tiene in memoria adesso, nient'altro. Le schermate e l'audio vengono scartati appena letto il testo; i campi password non vengono mai letti. Niente di tutto questo viene scritto su disco né inviato altrove: è tutto elaborato su questo computer."))
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -316,8 +316,8 @@ struct ContextPane: View {
             }
         } else if let m = plugin.installed, plugin.hasConsent {
             ToggleRow(L("Listen to the room & online calls", "Ascolta la stanza e le call online"),
-                      L("Always off when NexoLLM starts. Stops by itself when the screen locks, the computer sleeps or after an hour without typing. While listening, the menu bar icon can't be hidden.",
-                        "Sempre spento all'avvio di NexoLLM. Si ferma da solo quando lo schermo si blocca, il computer va in stop o dopo un'ora senza scrivere. Durante l'ascolto l'icona nella barra dei menu non può essere nascosta."),
+                      L("Always off when NexoLLM starts. Stops by itself when the screen locks, the computer sleeps or after 10 minutes without typing. While listening, the menu bar icon can't be hidden.",
+                        "Sempre spento all'avvio di NexoLLM. Si ferma da solo quando lo schermo si blocca, il computer va in stop o dopo 10 minuti senza scrivere. Durante l'ascolto l'icona nella barra dei menu non può essere nascosta."),
                       isOn: $settings.prefs.micContextEnabled)
             SettingRow(L("Plugin", "Plugin"), detail: "\(m.name) · \(Fmt.bytes(m.bytes))") {
                 HStack(spacing: 8) {
@@ -369,8 +369,8 @@ struct AudioPluginConsentSheet: View {
                             L("Recording or transcribing other people's voices may be subject to privacy and consent rules where you are. Use the plugin for your own voice, for public content, when the people speaking are informed and agree, or when you have an appropriate authorization (for example from your school, university or employer). Never use it to capture conversations covertly or conversations you are not part of.",
                               "Registrare o trascrivere la voce di altre persone può essere soggetto a regole su privacy e consenso nel luogo in cui ti trovi. Usa il plugin per la tua voce, per contenuti pubblici, quando chi parla è informato ed è d'accordo, o quando hai un'autorizzazione adeguata (ad esempio della scuola, dell'università o del datore di lavoro). Non usarlo mai per catturare conversazioni di nascosto o conversazioni di cui non fai parte."))
                     section(L("Built-in safeguards", "Tutele integrate"),
-                            L("Listening is always off when NexoLLM starts. While it's on, the status icon stays visible and can't be hidden, next to the system's own microphone indicator. Listening stops by itself when the screen locks, when the computer sleeps or after an hour without typing. You can clear the transcript or remove the plugin at any time.",
-                              "L'ascolto è sempre spento all'avvio di NexoLLM. Mentre è attivo, l'icona di stato resta visibile e non può essere nascosta, accanto all'indicatore del microfono del sistema. L'ascolto si ferma da solo quando lo schermo si blocca, quando il computer va in stop o dopo un'ora senza scrivere. Puoi svuotare la trascrizione o rimuovere il plugin in qualsiasi momento."))
+                            L("Listening is always off when NexoLLM starts. While it's on, the status icon stays visible and can't be hidden, next to the system's own microphone indicator. Listening stops by itself when the screen locks, when the computer sleeps or after 10 minutes without typing. You can clear the transcript or remove the plugin at any time.",
+                              "L'ascolto è sempre spento all'avvio di NexoLLM. Mentre è attivo, l'icona di stato resta visibile e non può essere nascosta, accanto all'indicatore del microfono del sistema. L'ascolto si ferma da solo quando lo schermo si blocca, quando il computer va in stop o dopo 10 minuti senza scrivere. Puoi svuotare la trascrizione o rimuovere il plugin in qualsiasi momento."))
                 }
                 .padding(.trailing, 6)
             }

@@ -61,7 +61,7 @@ struct SetupPane: View {
                     systemToggle(.inlinePrediction, isOn: inlinePredictionOn)
                 }
                 SettingRow(L("System autocorrect", "Correzione automatica di sistema"),
-                           L("The blue bubble that replaces a word as you type (\"cao\" → \"ciao\"). NexoLLM suggests its own fixes, so you can turn this off too.",
+                           L("The blue bubble that replaces a word as you type (\"helo\" → \"hello\"). NexoLLM suggests its own fixes, so you can turn this off too.",
                              "Il fumetto blu che sostituisce una parola mentre scrivi (\"cao\" → \"ciao\"). NexoLLM propone le sue correzioni, quindi puoi disattivarla."),
                            detail: autocorrectOn ? L("On", "Attiva") : L("Off", "Disattivata")) {
                     systemToggle(.autocorrect, isOn: autocorrectOn)
@@ -89,9 +89,9 @@ struct SetupPane: View {
             refresh()
         }
         .task {
-            while !Task.isCancelled && (!axTrusted || !screenRecording) {
+            while !Task.isCancelled && !axTrusted {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
-                refresh()
+                axTrusted = AX.isTrusted()
             }
         }
     }

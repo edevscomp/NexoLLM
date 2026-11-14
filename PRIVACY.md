@@ -59,13 +59,13 @@ removes everything.
 The plugin is optional, experimental and not installed with the app. Before it's downloaded you read a notice
 about how it works and about recording other people, and agree to use it responsibly. Listening is
 always off when NexoLLM starts, the status icon is shown while it's on (it can't be hidden), and it stops by
-itself when the screen locks, the computer sleeps or after an hour without typing. Full text:
+itself when the screen locks, the computer sleeps or after 10 minutes without typing. Full text:
 [LEGAL_AUDIO_PLUGIN.md](LEGAL_AUDIO_PLUGIN.md).
 
 ## Logs
 
-A local `NexoLLM.log` file in your user logs folder holds technical events (model loaded, permissions). Detailed logging, which can
-include short text fragments, is off unless you turn it on in Settings. The file is readable only by you. If
+A local `NexoLLM.log` file in your user logs folder holds technical events (model loaded, permissions,
+errors). It does not log typed or suggested text, and the file is readable only by you. If
 the app crashes, a report is shown on the next launch; it is never sent anywhere — you decide whether to copy
 it into an issue.
 

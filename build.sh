@@ -37,6 +37,9 @@ BUILD=$(( $(git rev-list --count HEAD 2>/dev/null || echo 0) + 13 ))
 if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then BUILD=$((BUILD + 1)); fi   # uncommitted work = next build
 
 SWIFT_FLAGS=(-c release -Xswiftc -gnone)
+if [[ "$MODE" == "build" ]]; then
+    SWIFT_FLAGS+=(-Xswiftc -DNEXO_DEV)
+fi
 swift build "${SWIFT_FLAGS[@]}"
 BIN="$(swift build "${SWIFT_FLAGS[@]}" --show-bin-path)"
 APP="build/$NAME.app"
@@ -45,11 +48,18 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "$BIN/$NAME" "$APP/Contents/MacOS/$NAME"
 strip "$APP/Contents/MacOS/$NAME"   # every symbol the loader doesn't need
+BIN_ARCHS="$(lipo -archs "$APP/Contents/MacOS/$NAME")"
 cp -R Vendor/build-apple/llama.xcframework/macos-arm64_x86_64/llama.framework "$APP/Contents/Frameworks/"
 cp -R Vendor/whisper/build-apple/whisper.xcframework/macos-arm64_x86_64/whisper.framework "$APP/Contents/Frameworks/"
 for FW in llama whisper; do
     rm -rf "$APP/Contents/Frameworks/$FW.framework/Headers" "$APP/Contents/Frameworks/$FW.framework/Modules" \
            "$APP/Contents/Frameworks/$FW.framework/Versions/A/Headers" "$APP/Contents/Frameworks/$FW.framework/Versions/A/Modules"
+    FW_BIN="$APP/Contents/Frameworks/$FW.framework/Versions/A/$FW"
+    [[ -f "$FW_BIN" ]] || FW_BIN="$APP/Contents/Frameworks/$FW.framework/$FW"
+    if [[ "$(echo "$BIN_ARCHS" | wc -w)" -eq 1 && "$(lipo -archs "$FW_BIN" | wc -w)" -gt 1 ]]; then
+        lipo -extract "$BIN_ARCHS" "$FW_BIN" -output "$FW_BIN.thin" && mv "$FW_BIN.thin" "$FW_BIN"
+    fi
+    strip -x "$FW_BIN" 2>/dev/null || true
 done
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns Resources/ThirdPartyNotices.txt Resources/key-click.wav LICENSE CHANGELOG.md "$APP/Contents/Resources/"

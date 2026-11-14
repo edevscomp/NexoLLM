@@ -20,81 +20,405 @@ final class NetworkMonitor: ObservableObject {
 
 // MARK: - Menu bar icon
 
-/// The NexoLLM mark (rounded tile + text cursor) drawn as a template image, one variant per state.
+/// Borderless minimalist monochrome stencil for the macOS menu bar (Tailscale / Voissaint / Passwords style).
 enum MenuBarIcon {
     enum State: Hashable { case active, smartScreen, paused, off, loading, reading, readingScreen, error }
+    enum Style { case a, b, ab }
 
+    static let style: Style = .ab
     private static var cache: [State: NSImage] = [:]
 
-    static func image(for state: State) -> NSImage {
-        if let img = cache[state] { return img }
+    private static func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+    private static func easeOutCubic(_ t: CGFloat) -> CGFloat {
+        let u = 1 - min(max(t, 0), 1)
+        return 1 - u * u * u
+    }
+
+    private static func makeTemplateImage(_ draw: @escaping () -> Void) -> NSImage {
         let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
-            func fill(_ r: NSRect, _ alpha: CGFloat = 1) {
-                NSColor.black.withAlphaComponent(alpha).setFill()
-                let k = min(r.width, r.height) / 2
-                NSBezierPath(roundedRect: r, xRadius: k, yRadius: k).fill()
-            }
-            func cursor(_ a: CGFloat = 1) {
-                fill(NSRect(x: 5.3, y: 5, width: 1.5, height: 8), a)
-                fill(NSRect(x: 4.1, y: 12.1, width: 3.9, height: 1.3), a)
-                fill(NSRect(x: 4.1, y: 4.6, width: 3.9, height: 1.3), a)
-            }
-            func ghost(_ a: CGFloat = 1) {
-                fill(NSRect(x: 8.7, y: 9.6, width: 5.6, height: 1.8), a)
-                fill(NSRect(x: 8.7, y: 6.4, width: 3.8, height: 1.8), a * 0.55)
-            }
-            func eyeBadge(_ center: NSPoint) {
-                NSColor.black.setStroke()
-                let eye = NSBezierPath(ovalIn: NSRect(x: center.x - 2.6, y: center.y - 1.7, width: 5.2, height: 3.4))
-                eye.lineWidth = 1.15
-                eye.stroke()
-                fill(NSRect(x: center.x - 0.85, y: center.y - 0.85, width: 1.7, height: 1.7))
-            }
-            NSColor.black.setStroke()
-            let tile = NSBezierPath(roundedRect: NSRect(x: 1.5, y: 1.5, width: 15, height: 15), xRadius: 4.2, yRadius: 4.2)
-            tile.lineWidth = 1.5
-            tile.stroke()
-            switch state {
-            case .active:
-                cursor(); ghost()
-            case .smartScreen:
-                cursor()
-                fill(NSRect(x: 8.7, y: 10.6, width: 5.4, height: 1.6))
-                eyeBadge(NSPoint(x: 11.4, y: 6.4))
-            case .paused:
-                fill(NSRect(x: 6.4, y: 5.5, width: 1.9, height: 7))
-                fill(NSRect(x: 9.7, y: 5.5, width: 1.9, height: 7))
-            case .off:
-                cursor(0.45); ghost(0.45)
-                let slash = NSBezierPath()
-                slash.move(to: NSPoint(x: 3.6, y: 3.6)); slash.line(to: NSPoint(x: 14.4, y: 14.4))
-                slash.lineWidth = 1.6; slash.lineCapStyle = .round
-                slash.stroke()
-            case .loading:
-                cursor()
-                for x in [9.4, 11.7, 14.0] { fill(NSRect(x: x - 0.9, y: 8.1, width: 1.8, height: 1.8)) }
-            case .reading:
-                for (x, h) in [(5.0, 4.0), (7.6, 8.0), (10.2, 6.0), (12.8, 3.0)] { fill(NSRect(x: x, y: 9 - h / 2, width: 1.5, height: h)) }
-            case .readingScreen:
-                let brackets = NSBezierPath()
-                // Viewfinder corners + center eye pupil when actively scanning the screen
-                brackets.move(to: NSPoint(x: 4.5, y: 10.8)); brackets.line(to: NSPoint(x: 4.5, y: 13.0)); brackets.line(to: NSPoint(x: 6.7, y: 13.0))
-                brackets.move(to: NSPoint(x: 11.3, y: 13.0)); brackets.line(to: NSPoint(x: 13.5, y: 13.0)); brackets.line(to: NSPoint(x: 13.5, y: 10.8))
-                brackets.move(to: NSPoint(x: 4.5, y: 7.2)); brackets.line(to: NSPoint(x: 4.5, y: 5.0)); brackets.line(to: NSPoint(x: 6.7, y: 5.0))
-                brackets.move(to: NSPoint(x: 11.3, y: 5.0)); brackets.line(to: NSPoint(x: 13.5, y: 5.0)); brackets.line(to: NSPoint(x: 13.5, y: 7.2))
-                brackets.lineWidth = 1.35; brackets.lineCapStyle = .round; brackets.lineJoinStyle = .round
-                brackets.stroke()
-                fill(NSRect(x: 7.7, y: 7.7, width: 2.6, height: 2.6))
-            case .error:
-                fill(NSRect(x: 8.1, y: 7.3, width: 1.8, height: 6.2))
-                fill(NSRect(x: 7.95, y: 3.9, width: 2.1, height: 2.1))
-            }
+            draw()
             return true
         }
         img.isTemplate = true
         img.accessibilityDescription = Brand.name
+        return img
+    }
+
+    private static func tiltedCapsule(center: NSPoint, width: CGFloat, height: CGFloat, angle: CGFloat, alpha: CGFloat = 1) {
+        guard alpha > 0.005 else { return }
+        NSGraphicsContext.saveGraphicsState()
+        let xform = NSAffineTransform()
+        xform.translateX(by: center.x, yBy: center.y)
+        xform.rotate(byDegrees: -angle)
+        xform.concat()
+        NSColor.black.withAlphaComponent(alpha).setFill()
+        let r = NSRect(x: -width / 2, y: -height / 2, width: width, height: height)
+        NSBezierPath(roundedRect: r, xRadius: width / 2, yRadius: width / 2).fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func dot(_ x: CGFloat, _ y: CGFloat, _ d: CGFloat, _ alpha: CGFloat = 1) {
+        guard alpha > 0.005, d > 0.05 else { return }
+        NSColor.black.withAlphaComponent(alpha).setFill()
+        NSBezierPath(ovalIn: NSRect(x: x - d / 2, y: y - d / 2, width: d, height: d)).fill()
+    }
+
+    private static let abTopDots: [(x: CGFloat, alpha: CGFloat, col: Int)] = [
+        (8.6, 0.94, 0), (11.7, 0.56, 1), (14.8, 0.28, 2)
+    ]
+    private static let abBottomDots: [(x: CGFloat, alpha: CGFloat, col: Int)] = [
+        (8.6, 0.70, 0), (11.7, 0.36, 1)
+    ]
+
+    private static func drawCoreMark(alpha: CGFloat = 1) {
+        switch style {
+        case .a:
+            tiltedCapsule(center: NSPoint(x: 4.6, y: 9.0), width: 1.85, height: 10.6, angle: 0, alpha: alpha)
+            for (x, a) in [(8.5, 0.94), (11.6, 0.56), (14.7, 0.28)] as [(CGFloat, CGFloat)] { dot(x, 11.1, 2.2, alpha * a) }
+            for (x, a) in [(8.5, 0.70), (11.6, 0.36)] as [(CGFloat, CGFloat)] { dot(x, 6.9, 2.2, alpha * a) }
+        case .b:
+            tiltedCapsule(center: NSPoint(x: 7.0, y: 9.0), width: 2.25, height: 11.2, angle: 16, alpha: alpha)
+            tiltedCapsule(center: NSPoint(x: 11.6, y: 8.5), width: 2.25, height: 8.5, angle: 16, alpha: alpha * 0.44)
+        case .ab:
+            let angle: CGFloat = 15
+            let t = tan(angle * .pi / 180)
+            tiltedCapsule(center: NSPoint(x: 4.8, y: 9.0), width: 1.9, height: 10.8, angle: angle, alpha: alpha)
+            let ts = 2.1 * t, bs = -2.1 * t
+            for d in abTopDots { dot(d.x + ts, 11.1, 2.15, alpha * d.alpha) }
+            for d in abBottomDots { dot(d.x + bs, 6.9, 2.15, alpha * d.alpha) }
+        }
+    }
+
+    private static func drawViewfinder(inset: CGFloat = 0, dotDiameter: CGFloat = 3.0, alphaScale: CGFloat = 1) {
+        guard alphaScale > 0.005 else { return }
+        let b = NSBezierPath()
+        for (x0, y0, x1, y1, x2, y2) in [
+            (3.4 + inset, 11.2, 3.4 + inset, 14.2 - inset, 6.4, 14.2 - inset),
+            (11.6, 14.2 - inset, 14.6 - inset, 14.2 - inset, 14.6 - inset, 11.2),
+            (3.4 + inset, 6.8, 3.4 + inset, 3.8 + inset, 6.4, 3.8 + inset),
+            (11.6, 3.8 + inset, 14.6 - inset, 3.8 + inset, 14.6 - inset, 6.8)
+        ] as [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] {
+            b.move(to: NSPoint(x: x0, y: y0)); b.line(to: NSPoint(x: x1, y: y1)); b.line(to: NSPoint(x: x2, y: y2))
+        }
+        NSColor.black.withAlphaComponent(alphaScale).setStroke()
+        b.lineWidth = 1.45; b.lineCapStyle = .round; b.lineJoinStyle = .round; b.stroke()
+        dot(9.0, 9.0, dotDiameter, alphaScale)
+    }
+
+    private static func drawState(_ state: State, alphaScale: CGFloat = 1) {
+        guard alphaScale > 0.005 else { return }
+        switch state {
+        case .active:
+            drawCoreMark(alpha: alphaScale)
+        case .smartScreen:
+            drawCoreMark(alpha: alphaScale)
+            dot(15.3, 14.3, 2.5, alphaScale)
+        case .paused:
+            tiltedCapsule(center: NSPoint(x: 6.7, y: 9.0), width: 2.15, height: 9.8, angle: 0, alpha: 0.92 * alphaScale)
+            tiltedCapsule(center: NSPoint(x: 11.3, y: 9.0), width: 2.15, height: 9.8, angle: 0, alpha: 0.45 * alphaScale)
+        case .off:
+            drawCoreMark(alpha: 0.30 * alphaScale)
+        case .loading:
+            for (x, a) in [(5.0, 0.95), (9.0, 0.60), (13.0, 0.32)] as [(CGFloat, CGFloat)] { dot(x, 9.0, 2.5, a * alphaScale) }
+        case .reading:
+            for (x, h, a) in [(4.0, 4.8, 0.58), (7.3, 10.6, 0.96), (10.7, 7.8, 0.86), (14.0, 4.2, 0.52)] as [(CGFloat, CGFloat, CGFloat)] {
+                tiltedCapsule(center: NSPoint(x: x, y: 9.0), width: 1.75, height: h, angle: 0, alpha: a * alphaScale)
+            }
+        case .readingScreen:
+            drawViewfinder(inset: 0, dotDiameter: 3.0, alphaScale: alphaScale)
+        case .error:
+            tiltedCapsule(center: NSPoint(x: 9.0, y: 11.2), width: 2.1, height: 6.8, angle: 0, alpha: alphaScale)
+            dot(9.0, 4.8, 2.3, alphaScale)
+        }
+    }
+
+    static func image(for state: State) -> NSImage {
+        if let img = cache[state] { return img }
+        let img = makeTemplateImage { drawState(state) }
         cache[state] = img
         return img
+    }
+
+    /// Interpolates smoothly between two steady states (0...1), morphing geometry for active/pause/wake.
+    static func transitionImage(from: State, to: State, progress rawT: CGFloat) -> NSImage {
+        let clamped = min(max(rawT, 0), 1)
+        if clamped <= 0.001 { return image(for: from) }
+        if clamped >= 0.999 { return image(for: to) }
+        let t = easeOutCubic(clamped)
+        let isCore: (State) -> Bool = { $0 == .active || $0 == .smartScreen }
+
+        let tan15 = CGFloat(tan(15 * CGFloat.pi / 180))
+        return makeTemplateImage {
+            if (isCore(from) && to == .paused) || (from == .paused && isCore(to)) {
+                let p = to == .paused ? t : (1 - t)
+                let ts = 2.1 * tan15, bs = -2.1 * tan15
+                tiltedCapsule(center: NSPoint(x: lerp(4.8, 6.7, p), y: 9.0),
+                              width: lerp(1.9, 2.15, p),
+                              height: lerp(10.8, 9.8, p),
+                              angle: lerp(15, 0, p),
+                              alpha: lerp(1.0, 0.92, p))
+                let dotFade = max(0, 1 - p * 1.45)
+                if dotFade > 0.01 {
+                    let size = lerp(2.15, 1.4, p)
+                    for d in abTopDots { dot(lerp(d.x + ts, 11.3, p), lerp(11.1, 9.0, p), size, d.alpha * dotFade) }
+                    for d in abBottomDots { dot(lerp(d.x + bs, 11.3, p), lerp(6.9, 9.0, p), size, d.alpha * dotFade) }
+                }
+                let barGrow = max(0, (p - 0.12) / 0.88)
+                if barGrow > 0.01 {
+                    tiltedCapsule(center: NSPoint(x: 11.3, y: 9.0),
+                                  width: lerp(1.6, 2.15, barGrow),
+                                  height: lerp(3.8, 9.8, barGrow),
+                                  angle: lerp(15, 0, barGrow),
+                                  alpha: 0.45 * barGrow)
+                }
+                if from == .smartScreen || to == .smartScreen {
+                    let smartP = 1 - p
+                    dot(lerp(13.5, 15.3, smartP), lerp(11.8, 14.3, smartP), lerp(0.8, 2.5, smartP), smartP)
+                }
+            } else if isCore(from) && isCore(to) {
+                drawCoreMark(alpha: 1.0)
+                let smartT = to == .smartScreen ? t : (1 - t)
+                dot(15.3, 14.3, lerp(0.6, 2.5, smartT), smartT)
+            } else if (from == .off && isCore(to)) || (isCore(from) && to == .off) || (from == .loading && isCore(to)) {
+                if from == .loading {
+                    let loadFade = max(0, 1 - clamped / 0.4)
+                    drawState(.loading, alphaScale: loadFade)
+                }
+                let w = to == .off ? (1 - t) : t
+                let minA: CGFloat = from == .loading ? 0.0 : 0.30
+                let cT = min(1, w / 0.55)
+                tiltedCapsule(center: NSPoint(x: 4.8, y: 9.0),
+                              width: lerp(minA > 0 ? 1.85 : 1.3, 1.9, cT),
+                              height: lerp(minA > 0 ? 10.0 : 5.4, 10.8, cT),
+                              angle: 15,
+                              alpha: lerp(minA, 1.0, cT))
+                let ts = 2.1 * tan15, bs = -2.1 * tan15
+                for d in abTopDots {
+                    let colT = min(1, max(0, (w - CGFloat(d.col) * 0.14) / 0.58))
+                    dot(d.x + ts, 11.1, lerp(minA > 0 ? 1.85 : 1.1, 2.15, colT), lerp(minA * d.alpha, d.alpha, colT))
+                }
+                for d in abBottomDots {
+                    let colT = min(1, max(0, (w - CGFloat(d.col) * 0.14) / 0.58))
+                    dot(d.x + bs, 6.9, lerp(minA > 0 ? 1.85 : 1.1, 2.15, colT), lerp(minA * d.alpha, d.alpha, colT))
+                }
+                if to == .smartScreen || from == .smartScreen {
+                    let sT = min(1, max(0, (w - 0.35) / 0.65))
+                    dot(15.3, 14.3, lerp(0.8, 2.5, sT), sT)
+                }
+            } else {
+                drawState(from, alphaScale: 1 - t)
+                drawState(to, alphaScale: t)
+            }
+        }
+    }
+
+    /// Crisp left-to-right spring nudge & luminance ripple when a suggestion is accepted via Tab.
+    static func acceptPulseImage(for state: State, progress rawT: CGFloat) -> NSImage {
+        let p = min(max(rawT, 0), 1)
+        guard (state == .active || state == .smartScreen), p > 0.001, p < 0.999 else { return image(for: state) }
+        let tan15 = CGFloat(tan(15 * CGFloat.pi / 180))
+        return makeTemplateImage {
+            let ts = 2.1 * tan15, bs = -2.1 * tan15
+            let cursorNudge = 0.50 * sin(.pi * p) * (1 - 0.5 * p)
+            tiltedCapsule(center: NSPoint(x: 4.8 + cursorNudge, y: 9.0), width: 1.9, height: 10.8, angle: 15, alpha: 1.0)
+            let peaks: [CGFloat] = [0.22, 0.50, 0.78]
+            let colWave: (Int) -> CGFloat = { col in
+                let dist = abs(p - peaks[col]) / 0.34
+                return dist < 1 ? 0.5 * (1 + cos(.pi * dist)) : 0
+            }
+            for d in abTopDots {
+                let w = colWave(d.col)
+                dot(d.x + ts, 11.1, 2.15 + 0.45 * w, min(1.0, d.alpha + (1.0 - d.alpha) * 0.75 * w))
+            }
+            for d in abBottomDots {
+                let w = colWave(d.col)
+                dot(d.x + bs, 6.9, 2.15 + 0.45 * w, min(1.0, d.alpha + (1.0 - d.alpha) * 0.75 * w))
+            }
+            if state == .smartScreen {
+                dot(15.3, 14.3, 2.5, 1.0)
+            }
+        }
+    }
+
+    /// Subtle periodic animation frame for active ongoing work (loading model, OCR capture, live mic).
+    static func animatedImage(for state: State, phase: CGFloat, level: CGFloat = 0) -> NSImage {
+        switch state {
+        case .loading:
+            let xs: [CGFloat] = [5.0, 9.0, 13.0]
+            return makeTemplateImage {
+                for (i, x) in xs.enumerated() {
+                    let s = sin(phase - CGFloat(i) * 1.15)
+                    let wave = 0.5 + 0.5 * s
+                    dot(x, 9.0 + 0.65 * s, 2.05 + 0.55 * wave, 0.28 + 0.68 * wave)
+                }
+            }
+        case .readingScreen:
+            return makeTemplateImage {
+                let b = 0.5 + 0.5 * sin(phase)
+                drawViewfinder(inset: 0.65 * b, dotDiameter: 2.5 + 0.75 * b, alphaScale: 0.85 + 0.15 * b)
+            }
+        case .reading:
+            let clamped = min(max(level, 0), 1)
+            return makeTemplateImage {
+                let specs: [(x: CGFloat, baseH: CGFloat, baseA: CGFloat)] = [
+                    (4.0, 4.6, 0.58), (7.3, 8.8, 0.96), (10.7, 6.8, 0.86), (14.0, 4.0, 0.52)
+                ]
+                for (i, spec) in specs.enumerated() {
+                    let osc = 0.5 + 0.5 * sin(phase * 1.4 + CGFloat(i) * 1.35)
+                    let h = min(12.4, max(3.6, spec.baseH + (1.2 + clamped * 3.8) * (osc - 0.35)))
+                    let a = min(1.0, spec.baseA + clamped * 0.25 * osc)
+                    tiltedCapsule(center: NSPoint(x: spec.x, y: 9.0), width: 1.75, height: h, angle: 0, alpha: a)
+                }
+            }
+        default:
+            return image(for: state)
+        }
+    }
+}
+
+/// Drives fluid, zero-idle menu bar micro-animations directly on NSStatusBarButton (no SwiftUI idle cost).
+@MainActor
+final class MenuBarAnimator {
+    private weak var button: NSStatusBarButton?
+    private(set) var currentState: MenuBarIcon.State?
+    private var timer: Timer?
+    private var isPulsingAccept = false
+    private var phase: CGFloat = 0
+    private var smoothedLevel: CGFloat = 0
+
+    var isAnimating: Bool { timer != nil }
+
+    nonisolated init() {}
+
+    static func isLooping(_ state: MenuBarIcon.State) -> Bool {
+        state == .loading || state == .reading || state == .readingScreen
+    }
+
+    func attach(_ button: NSStatusBarButton?) {
+        if button == nil {
+            stop()
+            self.button = nil
+            currentState = nil
+            return
+        }
+        self.button = button
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        isPulsingAccept = false
+    }
+
+    func setState(_ state: MenuBarIcon.State, dimmed: Bool,
+                  reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
+        button?.appearsDisabled = dimmed
+        if reduceMotion {
+            currentState = state
+            stop()
+            button?.image = MenuBarIcon.image(for: state)
+            return
+        }
+        guard let old = currentState else {
+            currentState = state
+            if Self.isLooping(state) {
+                startLoop(for: state)
+            } else {
+                stop()
+                button?.image = MenuBarIcon.image(for: state)
+            }
+            return
+        }
+        if old == state {
+            if Self.isLooping(state) {
+                if timer == nil { startLoop(for: state) }
+            } else if timer == nil {
+                button?.image = MenuBarIcon.image(for: state)
+            }
+            return
+        }
+        currentState = state
+        if Self.isLooping(state) {
+            startLoop(for: state)
+        } else {
+            startTransition(from: old, to: state)
+        }
+    }
+
+    func pulseAccept(reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
+        guard let state = currentState, (state == .active || state == .smartScreen), !reduceMotion, button != nil else { return }
+        stop()
+        isPulsingAccept = true
+        var step = 0
+        let total = 8
+        let t = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isPulsingAccept, self.currentState == state else {
+                    self?.stop()
+                    return
+                }
+                step += 1
+                let progress = CGFloat(step) / CGFloat(total)
+                if step >= total {
+                    self.stop()
+                    self.button?.image = MenuBarIcon.image(for: state)
+                } else {
+                    self.button?.image = MenuBarIcon.acceptPulseImage(for: state, progress: progress)
+                }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func startTransition(from: MenuBarIcon.State, to: MenuBarIcon.State) {
+        stop()
+        guard button != nil else { return }
+        var step = 0
+        let total = 8
+        let t = Timer(timeInterval: 0.0275, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.currentState == to else {
+                    self?.stop()
+                    return
+                }
+                step += 1
+                let progress = CGFloat(step) / CGFloat(total)
+                if step >= total {
+                    self.stop()
+                    self.button?.image = MenuBarIcon.image(for: to)
+                } else {
+                    self.button?.image = MenuBarIcon.transitionImage(from: from, to: to, progress: progress)
+                }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func startLoop(for state: MenuBarIcon.State) {
+        stop()
+        guard button != nil else { return }
+        let interval: TimeInterval = state == .readingScreen ? (1.0 / 15.0) : (1.0 / 12.0)
+        smoothedLevel = CGFloat(AudioContext.shared.inputLevel)
+        button?.image = MenuBarIcon.animatedImage(for: state, phase: phase, level: smoothedLevel)
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let cur = self.currentState, cur == state else {
+                    self?.stop()
+                    return
+                }
+                self.phase += 0.34
+                if self.phase > .pi * 200 { self.phase.formTruncatingRemainder(dividingBy: .pi * 2) }
+                if cur == .reading {
+                    let live = CGFloat(AudioContext.shared.inputLevel)
+                    self.smoothedLevel = self.smoothedLevel * 0.55 + live * 0.45
+                }
+                self.button?.image = MenuBarIcon.animatedImage(for: cur, phase: self.phase, level: self.smoothedLevel)
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 }
 
@@ -256,11 +580,12 @@ enum WebLookup {
         let q = raw.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "?!.")))
         var out = ""
         var word = ""
+        func fixWord(_ w: String) -> String? {
+            Thread.isMainThread ? Spelling.correction(for: w, context: q) : DispatchQueue.main.sync { Spelling.correction(for: w, context: q) }
+        }
         func flush() {
             guard !word.isEmpty else { return }
-            if let t = Spelling.typoMap[word.lowercased()] {
-                out += word.first?.isUppercase == true ? t.prefix(1).uppercased() + t.dropFirst() : t
-            } else if word.count >= 5, word.first?.isLowercase == true, let fix = Spelling.correction(for: word, context: q) {
+            if word.count >= 3, word.first?.isLowercase == true, let fix = fixWord(word) {
                 out += fix
             } else {
                 out += word
@@ -274,11 +599,25 @@ enum WebLookup {
         return out
     }
 
-    /// "it" or "en": the language the user searched in, independent of the app UI language.
+    /// ISO code ("it", "en", "es", "fr", "de", "pt") of the query, independent of the app UI language.
     static func queryLanguage(_ query: String) -> String {
         if let m = Spelling.markerLanguage(of: query) { return m }
-        return Spelling.dominantLanguageCode(of: query) == "it" ? "it" : "en"
+        let dom = Spelling.dominantLanguageCode(of: query)
+        return ["it", "en", "es", "fr", "de", "pt"].contains(dom) ? dom : "en"
     }
+
+    private static let lookupSession: URLSession = SecureNet.session(timeout: 10) {
+        WebLookup.isLookupHost($0.host?.lowercased() ?? "")
+    }
+
+    private static let languageMeta: [String: (name: String, newsHL: String, newsGL: String, newsCEID: String, accept: String)] = [
+        "it": ("ITALIANO", "it", "IT", "IT:it", "it-IT,it;q=0.9,en;q=0.8"),
+        "en": ("ENGLISH", "en-US", "US", "US:en", "en-US,en;q=0.9"),
+        "es": ("ESPAÑOL", "es", "ES", "ES:es", "es-ES,es;q=0.9,en;q=0.8"),
+        "fr": ("FRANÇAIS", "fr", "FR", "FR:fr", "fr-FR,fr;q=0.9,en;q=0.8"),
+        "de": ("DEUTSCH", "de", "DE", "DE:de", "de-DE,de;q=0.9,en;q=0.8"),
+        "pt": ("PORTUGUÊS", "pt-PT", "PT", "PT:pt-150", "pt-PT,pt;q=0.9,en;q=0.8"),
+    ]
 
     /// True when a news headline actually shares key terms with the user's query (prevents random sports/politics hits).
     /// Questions/news need one key term (typos fixed); phrases and idioms need two.
@@ -432,8 +771,8 @@ enum WebLookup {
         // Sources and summary follow the language of the query, not the app UI ("avere il coltello dalla parte del
         // manico" with the app in English is still looked up on the Italian Wiktionary/Wikipedia/News).
         let lang = queryLanguage(terms)
-        let italian = lang == "it"
-        let altLang = italian ? "en" : "it"
+        let meta = languageMeta[lang] ?? languageMeta["en"]!
+        let altLang = lang == "en" ? "it" : "en"
         guard !terms.isEmpty, let q = terms.addingPercentEncoding(withAllowedCharacters: queryAllowed) else {
             completion(.failure(URLError(.badURL))); return
         }
@@ -442,14 +781,12 @@ enum WebLookup {
         let wordCount = terms.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).count
         let isIdiom = !isQA && wordCount >= 3
         let core = phraseCore(terms)
-        // Headlines and encyclopedia titles never contain "cosa sta succedendo": questions search the key terms.
         let keyTerms = isQA && !keys.isEmpty ? keys.joined(separator: " ") : terms
         let kq = keyTerms.addingPercentEncoding(withAllowedCharacters: queryAllowed) ?? q
         let coreQ = ("\"" + core + "\"").addingPercentEncoding(withAllowedCharacters: queryAllowed) ?? q
         let dictionaryMeaning = isIdiom || wordCount >= 2 ? idiomMeaning(terms) : nil
 
-        // Only the services listed in the privacy policy, over HTTPS; redirects can't lead anywhere else.
-        let session = SecureNet.session(timeout: 10) { WebLookup.isLookupHost($0.host?.lowercased() ?? "") }
+        let session = lookupSession
         let group = DispatchGroup()
         let lock = NSLock()
         var ddgInstant: (text: String, url: URL)?
@@ -466,7 +803,7 @@ enum WebLookup {
             group.enter()
             var req = URLRequest(url: url, timeoutInterval: timeout)
             req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            req.setValue(italian ? "it-IT,it;q=0.9,en;q=0.8" : "en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+            req.setValue(meta.accept, forHTTPHeaderField: "Accept-Language")
             session.dataTask(with: req) { data, _, _ in
                 lock.lock(); handle(data); lock.unlock()
                 group.leave()
@@ -483,41 +820,38 @@ enum WebLookup {
                 ddgInstant = (abstract, link)
             }
         }
-        // 2. Wiktionary + Wikiquote in the query's language: the phrase's own entry, the entries that list it
-        //    ("manico"), and real usage examples of an idiom.
+        // 2. Wiktionary + Wikiquote in the query's language.
         if !isQA {
-            fetch(mediaWiki("\(lang).wiktionary.org", "action=query&generator=search&gsrsearch=\(q)&gsrlimit=1&prop=extracts|info&inprop=url&explaintext=1&exsentences=4&redirects=1")) { data in
-                wiktionary = parseMediaWiki(data: data)
+            fetch(mediaWiki("\(lang).wiktionary.org", "action=query&generator=search&gsrsearch=\(q)&gsrlimit=1&prop=extracts|info&inprop=url&explaintext=1&exsentences=4&redirects=1")) {
+                wiktionary = parseMediaWiki(data: $0)
             }
-            fetch(mediaWiki("\(lang).wiktionary.org", "action=query&list=search&srsearch=\(isIdiom ? coreQ : q)&srlimit=3&srprop=snippet")) { data in
-                wiktSnippets = parseMediaWikiSearch(data: data, host: "\(lang).wiktionary.org")
+            fetch(mediaWiki("\(lang).wiktionary.org", "action=query&list=search&srsearch=\(isIdiom ? coreQ : q)&srlimit=3&srprop=snippet")) {
+                wiktSnippets = parseMediaWikiSearch(data: $0, host: "\(lang).wiktionary.org")
             }
             if isIdiom {
-                fetch(mediaWiki("\(lang).wikiquote.org", "action=query&list=search&srsearch=\(coreQ)&srlimit=4&srprop=snippet")) { data in
-                    quoteSnippets = parseMediaWikiSearch(data: data, host: "\(lang).wikiquote.org")
+                fetch(mediaWiki("\(lang).wikiquote.org", "action=query&list=search&srsearch=\(coreQ)&srlimit=4&srprop=snippet")) {
+                    quoteSnippets = parseMediaWikiSearch(data: $0, host: "\(lang).wikiquote.org")
                 }
             }
         }
-        // 3. Wikipedia in the query's language (key terms for questions): intro of the best page + full-text snippets.
-        fetch(mediaWiki("\(lang).wikipedia.org", "action=query&generator=search&gsrsearch=\(kq)&gsrlimit=1&prop=extracts|info&inprop=url&exintro=1&explaintext=1&exsentences=4&redirects=1")) { data in
-            wiki = parseMediaWiki(data: data)
+        // 3. Wikipedia in the query's language + fallback language.
+        fetch(mediaWiki("\(lang).wikipedia.org", "action=query&generator=search&gsrsearch=\(kq)&gsrlimit=1&prop=extracts|info&inprop=url&exintro=1&explaintext=1&exsentences=4&redirects=1")) {
+            wiki = parseMediaWiki(data: $0)
         }
-        fetch(mediaWiki("\(lang).wikipedia.org", "action=query&list=search&srsearch=\(isIdiom ? coreQ : kq)&srlimit=3&srprop=snippet")) { data in
-            wikiSnippets = parseMediaWikiSearch(data: data, host: "\(lang).wikipedia.org")
+        fetch(mediaWiki("\(lang).wikipedia.org", "action=query&list=search&srsearch=\(isIdiom ? coreQ : kq)&srlimit=3&srprop=snippet")) {
+            wikiSnippets = parseMediaWikiSearch(data: $0, host: "\(lang).wikipedia.org")
         }
-        // 4. Wikipedia in the other language.
-        fetch(mediaWiki("\(altLang).wikipedia.org", "action=query&generator=search&gsrsearch=\(kq)&gsrlimit=1&prop=extracts|info&inprop=url&exintro=1&explaintext=1&exsentences=3&redirects=1")) { data in
-            fallbackWiki = parseMediaWiki(data: data)
+        fetch(mediaWiki("\(altLang).wikipedia.org", "action=query&generator=search&gsrsearch=\(kq)&gsrlimit=1&prop=extracts|info&inprop=url&exintro=1&explaintext=1&exsentences=3&redirects=1")) {
+            fallbackWiki = parseMediaWiki(data: $0)
         }
-        // 5. Google News RSS in the query's language (an idiom is not news: skipped).
+        // 4. Google News RSS in the query's language (skipped for idioms).
         if !isIdiom {
-            fetch("https://news.google.com/rss/search?q=\(kq)&hl=\(italian ? "it" : "en-US")&gl=\(italian ? "IT" : "US")&ceid=\(italian ? "IT:it" : "US:en")") { data in
+            fetch("https://news.google.com/rss/search?q=\(kq)&hl=\(meta.newsHL)&gl=\(meta.newsGL)&ceid=\(meta.newsCEID)") { data in
                 if let xml = data.flatMap({ String(data: $0, encoding: .utf8) }) { rawNews = parseRSS(xml) }
             }
         }
 
         group.notify(queue: .main) {
-            session.finishTasksAndInvalidate()
             let termsLower = terms.lowercased()
             let news = rawNews.filter { isRelevantNewsItem(title: $0.title, forQuery: terms) }
             // An idiom must appear as such (its core words, in order); otherwise the usual relevance rules apply.
@@ -624,34 +958,18 @@ enum WebLookup {
                 return
             }
 
-            let prompt: String
-            if italian {
-                prompt = combinedContext.isEmpty
-                    ? """
-                      Rispondi in modo chiaro e diretto in ITALIANO (massimo 2 frasi) a: «\(terms)». Se è un modo di dire, spiegane il significato figurato (non la traduzione letterale); se è una domanda, rispondi direttamente. Scrivi SOLO in italiano.
+            let prompt = combinedContext.isEmpty
+                ? """
+                  Answer clearly and directly in \(meta.name) (maximum 2 sentences) about “\(terms)”. If it is an idiom, explain its figurative meaning (not a literal translation); if it is a question, answer it directly. Write ONLY in \(meta.name).
 
-                      Risposta in italiano su «\(terms)»:
-                      """
-                    : """
-                      Usa i seguenti risultati di ricerca per dare un sunto veloce, chiaro e diretto in ITALIANO (massimo 2 frasi) su «\(terms)». Se è un modo di dire, spiegane il significato figurato (non la traduzione letterale); se è una domanda o notizia, rispondi in modo diretto. Scrivi SOLO in italiano:
-                      \(combinedContext.prefix(1100))
+                  Summary in \(meta.name) (“\(terms)”):
+                  """
+                : """
+                  Use the following search results to provide a fast, clear and direct summary in \(meta.name) (maximum 2 sentences) about “\(terms)”. If it is an idiom, explain its figurative meaning; if it is a question or news topic, answer it directly. Write ONLY in \(meta.name):
+                  \(combinedContext.prefix(1100))
 
-                      Sunto veloce in italiano su «\(terms)»:
-                      """
-            } else {
-                prompt = combinedContext.isEmpty
-                    ? """
-                      Answer clearly and directly in ENGLISH (maximum 2 sentences): “\(terms)”. If it is an idiom, explain its figurative meaning (not a literal translation); if it is a question, answer it directly. Write ONLY in English.
-
-                      Answer in English about “\(terms)”:
-                      """
-                    : """
-                      Use the following search results to provide a fast, clear and direct summary in ENGLISH (maximum 2 sentences) about “\(terms)”. If it is an idiom, explain its figurative meaning; if it is a question or news topic, answer it directly. Write ONLY in English:
-                      \(combinedContext.prefix(1100))
-
-                      Quick summary in English about “\(terms)”:
-                      """
-            }
+                  Summary in \(meta.name) (“\(terms)”):
+                  """
 
             guard let answerWith else {
                 if let s = fallbackSummary { completion(.success(card(s))) } else { completion(.failure(URLError(.cannotFindHost))) }
@@ -720,44 +1038,6 @@ enum WebLookup {
         return matched >= (keys.count >= 3 ? keys.count - 1 : keys.count)
     }
 
-    /// Parses organic web search results (`title`, `snippet`, and real destination `url`) from DuckDuckGo HTML search.
-    static func parseDuckDuckGoHTML(_ html: String) -> [WebSnippet] {
-        var results: [WebSnippet] = []
-        let rawBlocks = html.contains("class=\"result__body\"")
-            ? html.components(separatedBy: "class=\"result__body\"")
-            : html.components(separatedBy: "class=\"result\"")
-        for block in rawBlocks.dropFirst().prefix(8) {
-            guard let aRange = block.range(of: "class=\"result__a\"") else { continue }
-            let afterA = block[aRange.upperBound...]
-            // Extract href before or after class="result__a"
-            let headerSlice = block[..<min(block.endIndex, block.index(aRange.upperBound, offsetBy: 600, limitedBy: block.endIndex) ?? block.endIndex)]
-            guard let hrefRange = headerSlice.range(of: "href=\"") else { continue }
-            let afterHref = headerSlice[hrefRange.upperBound...]
-            guard let hrefEnd = afterHref.firstIndex(of: "\"") else { continue }
-            let rawHref = String(afterHref[..<hrefEnd])
-            guard let targetURL = extractRealURL(from: rawHref) else { continue }
-
-            guard let tagClose = afterA.firstIndex(of: ">"),
-                  let endA = afterA.range(of: "</a>", range: tagClose..<afterA.endIndex) else { continue }
-            let rawTitle = String(afterA[afterA.index(after: tagClose)..<endA.lowerBound])
-            let title = stripHTML(rawTitle)
-            guard !title.isEmpty else { continue }
-
-            var snippet = ""
-            if let snipRange = block.range(of: "class=\"result__snippet\"") {
-                let afterSnip = block[snipRange.upperBound...]
-                if let sOpen = afterSnip.firstIndex(of: ">"),
-                   let sClose = afterSnip.range(of: "</", range: sOpen..<afterSnip.endIndex) {
-                    snippet = stripHTML(String(afterSnip[afterSnip.index(after: sOpen)..<sClose.lowerBound]))
-                }
-            }
-            let host = (targetURL.host ?? "web").replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
-            results.append(WebSnippet(title: title, snippet: snippet, source: host, url: targetURL))
-            if results.count >= 5 { break }
-        }
-        return results
-    }
-
     /// Only plain web pages may be opened from a result card (no file:, custom app schemes, javascript:…).
     static func isWebLink(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
@@ -768,27 +1048,9 @@ enum WebLookup {
     /// Longest text sent to search engines: a selection or OCR'd area can be a whole page of private text.
     static let maxQueryLength = 300
 
-    private static func extractRealURL(from href: String) -> URL? {
-        let decodedHref = decode(href)
-        if let uddgRange = decodedHref.range(of: "uddg=") {
-            let after = decodedHref[uddgRange.upperBound...]
-            let encoded = after.prefix { $0 != "&" }
-            if let unescaped = String(encoded).removingPercentEncoding, let u = URL(string: unescaped), u.scheme?.hasPrefix("http") == true {
-                return u
-            }
-        }
-        if decodedHref.hasPrefix("//"), let u = URL(string: "https:" + decodedHref) { return u }
-        if let u = URL(string: decodedHref), u.scheme?.hasPrefix("http") == true { return u }
-        return nil
-    }
-
     private static func stripHTML(_ s: String) -> String {
         let noTags = s.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
         return decode(noTags).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-    }
-
-    private static func urllibLower(_ s: String) -> String {
-        s.lowercased().addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s
     }
 
     private static func parseMediaWiki(data: Data?) -> (title: String, text: String, url: URL)? {

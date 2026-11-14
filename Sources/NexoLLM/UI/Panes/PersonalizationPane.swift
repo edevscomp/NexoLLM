@@ -71,7 +71,6 @@ struct PersonalizationPane: View {
                                     Circle()
                                         .fill(Theme.aurora)
                                         .frame(width: 8, height: 8)
-                                        .glow(Theme.violet, radius: 4, opacity: min(1, e.strength / 2))
                                         .padding(.top, 5)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(e.text).font(.callout).lineLimit(2)
@@ -198,7 +197,7 @@ private struct FlowChips: View {
     let symbol: String
 
     var body: some View {
-        ChipLayout(spacing: 6) {
+        FlowLayout(hSpacing: 6, vSpacing: 6) {
             ForEach(items, id: \.self) { item in
                 HStack(spacing: 5) {
                     Image(systemName: symbol).font(.system(size: 8.5, weight: .semibold)).foregroundStyle(Theme.accent)
@@ -208,35 +207,6 @@ private struct FlowChips: View {
                 .padding(.vertical, 4)
                 .background(Capsule().fill(Theme.accent.opacity(0.10)))
             }
-        }
-    }
-}
-
-/// Minimal flow layout (left to right, wrapping).
-private struct ChipLayout: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 600
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
-            x += size.width + spacing
-            maxX = max(maxX, x - spacing)
-            rowHeight = max(rowHeight, size.height)
-        }
-        return CGSize(width: min(width, maxX), height: y + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX { x = bounds.minX; y += rowHeight + spacing; rowHeight = 0 }
-            s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
         }
     }
 }

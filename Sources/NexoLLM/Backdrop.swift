@@ -23,7 +23,7 @@ final class Backdrop {
     func tone(for key: String, caretAX: CGRect, onChange: @escaping (Tone) -> Void) -> Tone {
         let cached = samples[key]
         if let cached, Date().timeIntervalSince(cached.date) < 60 { return cached.tone }
-        guard Settings.shared.prefs.screenMode != .off, CGPreflightScreenCaptureAccess(),
+        guard Settings.shared.prefs.screenMode == .smart, CGPreflightScreenCaptureAccess(),
               pending.insert(key).inserted else { return cached?.tone ?? .unknown }
         let previous = cached?.tone ?? .unknown
         let rect = CGRect(x: caretAX.maxX + 3, y: caretAX.minY, width: 60, height: max(8, caretAX.height))

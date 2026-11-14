@@ -16,6 +16,7 @@ enum Spelling {
     private static let tag = NSSpellChecker.uniqueSpellDocumentTag()
 
     /// Common Italian words often typed without an accent or with a trailing apostrophe ("probabilita'" -> "probabilità").
+    /// Ambiguous real words ("meta", "eta") are excluded unless typed with an apostrophe, preventing cross-language corruption.
     private static let accentMap: [String: String] = [
         "probabilita": "probabilità", "probablita": "probabilità", "possibilita": "possibilità", "possiblita": "possibilità",
         "universita": "università", "difficolta": "difficoltà", "attivita": "attività", "verita": "verità",
@@ -23,24 +24,30 @@ enum Spelling {
         "piu": "più", "gia": "già", "puo": "può", "cio": "ciò", "cosi": "così", "pero": "però", "percio": "perciò",
         "qualita": "qualità", "quantita": "quantità", "realta": "realtà", "societa": "società", "liberta": "libertà",
         "capacita": "capacità", "velocita": "velocità", "felicita": "felicità", "curiosita": "curiosità",
-        "opportunita": "opportunità", "necessita": "necessità", "novita": "novità", "eta": "età", "meta": "metà",
+        "opportunita": "opportunità", "necessita": "necessità", "novita": "novità",
         "caffe": "caffè", "cioe": "cioè", "anziche": "anziché", "pressoché": "pressoché", "pressoche": "pressoché",
     ]
 
-    /// Frequent keyboard slips on very common words (adjacent key before the first letter, doubled or swapped
-    /// letters). Always corrected, and used by language detection so `"xciao"` counts as Italian `"ciao"`.
-    static let typoMap: [String: String] = [
-        "xciao": "ciao", "cciao": "ciao", "vciao": "ciao", "ciaoo": "ciao", "ciaooo": "ciao",
+    private static let italianTypos: [String: String] = [
+        "xciao": "ciao", "cciao": "ciao", "vciao": "ciao", "ciaoo": "ciao", "ciaooo": "ciao", "cao": "ciao", "ciai": "ciao",
         "buongirono": "buongiorno", "bungiorno": "buongiorno", "buongiono": "buongiorno", "buonaser": "buonasera",
         "coaa": "cosa", "csoa": "cosa", "cosaa": "cosa", "succednedo": "succedendo", "succedndo": "succedendo",
         "sucesso": "successo", "perhcè": "perché", "perhce": "perché", "perchè": "perché",
         "scsua": "scusa", "grzie": "grazie", "garzie": "grazie", "graize": "grazie", "nonn": "non",
         "qeusto": "questo", "qusto": "questo", "sempe": "sempre", "ancge": "anche",
-        "hllo": "hello", "thnaks": "thanks", "thansk": "thanks", "becuase": "because",
-        // Three-letter slips on greetings and function words ("cao" is never a word you meant).
-        "cao": "ciao", "ciai": "ciao", "teh": "the", "hte": "the", "adn": "and", "nad": "and", "taht": "that",
-        "yuo": "you", "thier": "their", "wiht": "with",
     ]
+
+    private static let englishTypos: [String: String] = [
+        "hllo": "hello", "helo": "hello", "thnaks": "thanks", "thansk": "thanks", "becuase": "because",
+        "teh": "the", "hte": "the", "adn": "and", "nad": "and", "taht": "that", "yuo": "you", "thier": "their", "wiht": "with",
+    ]
+
+    private static let otherGreetingTypos: [String: (word: String, lang: String)] = [
+        "hla": ("hola", "es"), "salu": ("salut", "fr"), "halo": ("hallo", "de"), "ola": ("olá", "pt"),
+    ]
+
+    /// Combined slip table used by language-normalization and tests.
+    static let typoMap: [String: String] = italianTypos.merging(englishTypos) { a, _ in a }
 
     /// Chat shorthand expanded only by the writing tools (Fix Grammar, Improve…), never while typing: there the
     /// user may well mean to write "cmq".
@@ -73,7 +80,7 @@ enum Spelling {
     /// The last *finished* word (followed by a space/punctuation), for suggested fixes.
     /// Includes a trailing apostrophe used as an accent ("probablita' ", "perche' ").
     static func lastFinishedWord(_ prefix: String) -> (word: String, trailing: String)? {
-        let trailing = String(prefix.reversed().prefix(while: { $0 == " " || ",.;:!?".contains($0) }).reversed())
+        let trailing = String(prefix.reversed().prefix(while: { SuggestionText.isSpace($0) || ",.;:!?".contains($0) }).reversed())
         guard !trailing.isEmpty, trailing.count <= 2 else { return nil }
         var body = prefix.dropLast(trailing.count)
         guard !isURLToken(body) else { return nil }
@@ -140,12 +147,28 @@ enum Spelling {
         ("fr", frenchMarkers), ("de", germanMarkers), ("pt", portugueseMarkers),
     ]
 
+    private static let recognizerLock = NSLock()
+    private static let sharedRecognizer: NLLanguageRecognizer = {
+        let r = NLLanguageRecognizer()
+        r.languageConstraints = [.italian, .english, .spanish, .french, .german, .portuguese]
+        return r
+    }()
+
+    private static func recognizeLanguage(_ text: String, minConfidence: Double) -> String? {
+        recognizerLock.lock(); defer { recognizerLock.unlock() }
+        sharedRecognizer.reset()
+        sharedRecognizer.languageConstraints = [.italian, .english, .spanish, .french, .german, .portuguese]
+        sharedRecognizer.processString(text)
+        guard let dom = sharedRecognizer.dominantLanguage,
+              (sharedRecognizer.languageHypotheses(withMaximum: 1)[dom] ?? 0) >= minConfidence else { return nil }
+        return dom.rawValue
+    }
+
     /// Detects the ISO language code (`"it"`, `"en"`, `"es"`, `"fr"`, `"de"`, `"pt"`) of the current clause or words being typed.
     /// Switches immediately even on 1–2 words (e.g. typing `"privacy inspector"` while the app UI is in Italian).
     static func detectedLanguageCode(for context: String) -> String {
         let fallbackCode = Settings.shared.prefs.exampleLanguage.iso
         let tail = String(context.suffix(300))
-        // Focus on the active sentence / line so switching languages mid-note or in a new line reacts immediately.
         let activeClause = tail
             .components(separatedBy: CharacterSet(charactersIn: "\n.!?"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -160,36 +183,33 @@ enum Spelling {
         let recent = Array(words.suffix(5))
         var scores: [String: Int] = [:]
         for raw in recent {
-            var w = raw
-            var validEN = isValid(w, language: "en")
-            var validIT = isValid(w, language: "it")
-            if !validEN && !validIT && !markerSets.contains(where: { $0.words.contains(w) }) {
-                // Unknown word: score it as the word it almost certainly is ("xciao" → "ciao").
-                w = normalizedForLanguage(raw, knownInvalid: true)
-                if w != raw { validEN = isValid(w, language: "en"); validIT = isValid(w, language: "it") }
-            }
-            for (code, set) in markerSets where set.contains(w) { scores[code, default: 0] += 3 }
-            if validEN && !validIT { scores["en", default: 0] += 2 }
-            else if validIT && !validEN { scores["it", default: 0] += 2 }
-            else if !validEN && !validIT {
-                let (i, e) = suffixVote(w)
-                if i > 0 { scores["it", default: 0] += i }
-                if e > 0 { scores["en", default: 0] += e }
+            var matched = false
+            for (code, set) in markerSets where set.contains(raw) { scores[code, default: 0] += 3; matched = true }
+            if !matched {
+                let norm = normalizedForLanguage(raw, knownInvalid: false)
+                if norm != raw {
+                    for (code, set) in markerSets where set.contains(norm) { scores[code, default: 0] += 3 }
+                }
             }
         }
 
-        if words.count >= 2 {
-            let recognizer = NLLanguageRecognizer()
-            recognizer.languageConstraints = [.italian, .english, .spanish, .french, .german, .portuguese]
-            recognizer.processString(activeClause)
-            if let domLang = recognizer.dominantLanguage,
-               (recognizer.languageHypotheses(withMaximum: 1)[domLang] ?? 0) >= 0.55 {
-                let dom = domLang.rawValue
-                let bestMarker = scores.max { $0.value < $1.value }
-                // Trust NLRecognizer unless strong marker evidence points elsewhere (e.g. 2-word English terms).
-                if bestMarker == nil || bestMarker!.key == dom || bestMarker!.value < 4 {
-                    return dom
-                }
+        if words.count >= 2, let dom = recognizeLanguage(activeClause, minConfidence: 0.55) {
+            let bestMarker = scores.max { $0.value < $1.value }
+            if bestMarker == nil || bestMarker!.key == dom || bestMarker!.value < 4 {
+                return dom
+            }
+        }
+
+        // Dictionary & suffix tie-breaker only for short 1–2 word fragments without clear NL recognition.
+        for raw in recent {
+            let validEN = isValid(raw, language: "en")
+            let validIT = isValid(raw, language: "it")
+            if validEN && !validIT { scores["en", default: 0] += 2 }
+            else if validIT && !validEN { scores["it", default: 0] += 2 }
+            else if !validEN && !validIT {
+                let (i, e) = suffixVote(raw)
+                if i > 0 { scores["it", default: 0] += i }
+                if e > 0 { scores["en", default: 0] += e }
             }
         }
 
@@ -246,15 +266,9 @@ enum Spelling {
     static func dominantLanguageCode(of text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let wordCount = trimmed.split(whereSeparator: { !$0.isLetter }).count
-        if wordCount >= 4 {
-            let r = NLLanguageRecognizer()
-            r.languageConstraints = [.italian, .english, .spanish, .french, .german, .portuguese]
-            r.processString(trimmed)
-            if let dom = r.dominantLanguage, (r.languageHypotheses(withMaximum: 1)[dom] ?? 0) >= 0.5 {
-                return dom.rawValue
-            }
+        if wordCount >= 4, let dom = recognizeLanguage(trimmed, minConfidence: 0.5) {
+            return dom
         }
-        // Short texts: vote over every clause, not only the last one.
         var votes: [String: Int] = [:]
         for clause in trimmed.components(separatedBy: CharacterSet(charactersIn: ".!?\n")) where clause.contains(where: { $0.isLetter }) {
             votes[detectedLanguageCode(for: clause), default: 0] += 1
@@ -341,11 +355,30 @@ enum Spelling {
             core.first?.isUppercase == true ? target.prefix(1).uppercased() + target.dropFirst() : target
         }
 
-        if let mapped = accentMap[lower] ?? typoMap[lower] {
-            return applyCase(mapped)
+        let detected = detectedLanguageCode(for: context)
+        let lang = language(for: context)
+        let isolated = context.split(whereSeparator: { !$0.isLetter }).count <= 1
+
+        // Never corrupt words that are already valid or recognized markers in a non-Italian sentence (e.g. ES "pero", PT "sucesso").
+        if !hasApostrophe, detected != "it" {
+            if markerSets.first(where: { $0.code == detected })?.words.contains(lower) == true { return nil }
+            if !isolated, isValid(core, language: lang) { return nil }
         }
 
-        let lang = language(for: context)
+        if let g = otherGreetingTypos[lower], (detected == g.lang || (isolated && Settings.shared.prefs.exampleLanguage.iso == g.lang)) {
+            return applyCase(g.word)
+        }
+        if detected == "en" || isolated, let en = englishTypos[lower] {
+            return applyCase(en)
+        }
+        if detected == "it" || hasApostrophe || (isolated && Settings.shared.prefs.exampleLanguage != .portuguese) {
+            if hasApostrophe, lower == "eta" { return applyCase("età") }
+            if hasApostrophe, lower == "meta" { return applyCase("metà") }
+            if let mapped = accentMap[lower] ?? italianTypos[lower] {
+                return applyCase(mapped)
+            }
+        }
+
         if !hasApostrophe, isKnown(core, language: lang) { return nil }
         // Short words (3–4 letters) without a trailing apostrophe: only fix missing accents, never swap/delete letters ("suca" != "sua").
         let onlyAccent = core.count <= 4 && !hasApostrophe
@@ -482,7 +515,7 @@ enum Emoji {
     static func trailingEmoticon(_ prefix: String) -> (String, String)? {
         for (k, v) in emoticons.sorted(by: { $0.key.count > $1.key.count }) where prefix.hasSuffix(k) {
             let before = prefix.dropLast(k.count)
-            if before.isEmpty || before.last == " " || before.last == "\n" { return (k, v) }
+            if before.isEmpty || (before.last.map(SuggestionText.isHorizontalSpace) ?? false) || before.last == "\n" { return (k, v) }
         }
         return nil
     }
@@ -493,7 +526,7 @@ enum Emoji {
         let query = prefix[prefix.index(after: colon)...]
         guard query.count <= 20, query.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
         let before = prefix[..<colon]
-        guard before.isEmpty || before.last == " " || before.last == "\n" else { return nil }
+        guard before.isEmpty || (before.last.map(SuggestionText.isHorizontalSpace) ?? false) || before.last == "\n" else { return nil }
         if query.isEmpty, before.isEmpty { return nil }
         return String(query)
     }
@@ -515,6 +548,7 @@ enum ContextSources {
 
 /// Pasteboard conventions shared by password managers and clipboard history apps (nspasteboard.org).
 enum Pasteboards {
+    typealias Snapshot = [[(NSPasteboard.PasteboardType, Data)]]
     static let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
     static let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
     static let autoGenerated = NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType")

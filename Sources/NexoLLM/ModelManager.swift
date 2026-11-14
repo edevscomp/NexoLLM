@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 // MARK: - Hardware
@@ -142,6 +141,7 @@ final class ModelManager: NSObject, ObservableObject {
     private var tasks: [String: URLSessionDownloadTask] = [:]
     private var models: [Int: CatalogModel] = [:]   // task identifier -> model
     private var speedMark: [String: (Date, Int64)] = [:]
+    private var lastUIUpdate: [String: Date] = [:]
     private lazy var session = URLSession(configuration: SecureNet.configuration(timeout: 60), delegate: self, delegateQueue: .main)
 
     private var folder: URL { Settings.modelsFolder }
@@ -253,11 +253,12 @@ final class ModelManager: NSObject, ObservableObject {
         downloads[m.id]?.verifying = true
         let target = folder.appendingPathComponent(m.id)
         Task.detached(priority: .utility) {
-            let ok = ModelManager.sha256(of: file) == m.sha256
+            let ok = SecureFile.sha256(of: file) == m.sha256
             await MainActor.run {
                 let mgr = ModelManager.shared
                 mgr.tasks[m.id] = nil
                 mgr.downloads[m.id] = nil
+                mgr.lastUIUpdate[m.id] = nil
                 guard ok else {
                     try? FileManager.default.removeItem(at: file)
                     mgr.error = L("\(m.name) didn't match its checksum and was discarded. Try again.", "\(m.name) non corrisponde al checksum ed è stato scartato. Riprova.")
@@ -277,14 +278,6 @@ final class ModelManager: NSObject, ObservableObject {
                 }
             }
         }
-    }
-
-    nonisolated static func sha256(of url: URL) -> String? {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? h.close() }
-        var hasher = SHA256()
-        while let chunk = try? h.read(upToCount: 8 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -306,11 +299,17 @@ extension ModelManager: URLSessionDownloadDelegate {
                                 totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         MainActor.assumeIsolated {
             guard let m = models[downloadTask.taskIdentifier], var d = downloads[m.id] else { return }
+            let now = Date()
+            if let last = lastUIUpdate[m.id], now.timeIntervalSince(last) < 0.1,
+               totalBytesExpectedToWrite <= 0 || totalBytesWritten < totalBytesExpectedToWrite {
+                return
+            }
+            lastUIUpdate[m.id] = now
             d.received = totalBytesWritten
             if totalBytesExpectedToWrite > 0 { d.total = totalBytesExpectedToWrite }
-            if let (t, b) = speedMark[m.id], Date().timeIntervalSince(t) >= 1 {
-                d.bytesPerSecond = Double(totalBytesWritten - b) / Date().timeIntervalSince(t)
-                speedMark[m.id] = (Date(), totalBytesWritten)
+            if let (t, b) = speedMark[m.id], now.timeIntervalSince(t) >= 1 {
+                d.bytesPerSecond = Double(totalBytesWritten - b) / now.timeIntervalSince(t)
+                speedMark[m.id] = (now, totalBytesWritten)
             }
             downloads[m.id] = d
         }

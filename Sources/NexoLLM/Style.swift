@@ -235,6 +235,11 @@ final class StyleProfile: ObservableObject {
         // English
         "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "but", "is", "are", "was", "it", "this", "that",
         "i", "you", "he", "she", "we", "they", "my", "your", "with", "at", "be", "have", "has", "not", "so", "as",
+        // ES / FR / DE / PT
+        "el", "los", "las", "del", "que", "por", "para", "como", "pero", "más", "mas", "está", "son", "muy",
+        "les", "des", "est", "pas", "que", "qui", "dans", "pour", "sur", "plus", "avec", "tout", "mais", "nous", "vous",
+        "der", "die", "das", "den", "dem", "und", "ist", "nicht", "mit", "auf", "für", "von", "sie", "ich", "wir", "auch",
+        "os", "as", "um", "uma", "dos", "das", "não", "nao", "mais", "muito", "está", "como", "pelo", "pela",
     ]
 
     /// Recurring 2–4-word expressions (counted once per text), dropping ones made only of filler words

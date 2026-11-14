@@ -51,14 +51,12 @@ final class ScreenContext: ObservableObject {
     }
 
     /// Fields with a cached snapshot, most recent last. Text only, bounded.
-    private var snapshots: [String: Snapshot] = [:]
-    private var order: [String] = []
+    private var snapshots = BoundedCache<String, Snapshot>(limit: 8)
     /// Last manual capture per app: lends its context to any field of that app for a few minutes
     /// (e.g. captured while reading, then started typing in another field).
     private var pinned: [pid_t: Snapshot] = [:]
     /// How long manual captures stay valid.
     static let manualLifetime: TimeInterval = 600
-    private let maxEntries = 8
     private var lastCapture = Date.distantPast
     /// A capture started or ended (the menu bar icon shows when the screen is being read).
     var onStateChange: (() -> Void)?
@@ -78,7 +76,7 @@ final class ScreenContext: ObservableObject {
     func snapshot(_ key: String) -> Snapshot? { snapshots[key] }
 
     /// The newest screen text held in memory (Privacy Inspector).
-    var latestPreview: Snapshot? { Self.newest(Array(snapshots.values) + Array(pinned.values)) }
+    var latestPreview: Snapshot? { Self.newest(Array(snapshots.entries.values) + Array(pinned.values)) }
 
     static func newest(_ all: [Snapshot]) -> Snapshot? {
         all.filter { !$0.text.isEmpty }.max { $0.date < $1.date }
@@ -104,16 +102,14 @@ final class ScreenContext: ObservableObject {
     /// Drops snapshots older than `age` (called when the app goes idle). Manual ones live longer.
     func prune(olderThan age: TimeInterval) {
         let now = Date()
-        for (k, s) in snapshots where now.timeIntervalSince(s.date) > (s.manual ? max(age, Self.manualLifetime) : age) {
+        for (k, s) in snapshots.entries where now.timeIntervalSince(s.date) > (s.manual ? max(age, Self.manualLifetime) : age) {
             snapshots[k] = nil
         }
-        order.removeAll { snapshots[$0] == nil }
         pinned = pinned.filter { now.timeIntervalSince($0.value.date) < Self.manualLifetime }
     }
 
     func removeAll() {
-        snapshots = [:]
-        order = []
+        snapshots.removeAll()
         pinned = [:]
         latestText = ""
         lastCapturedAt = nil
@@ -128,7 +124,7 @@ final class ScreenContext: ObservableObject {
     }
 
     /// Text held in memory, for Settings → Clear Cache.
-    var bytes: Int { (snapshots.values.map(\.text) + pinned.values.map(\.text)).reduce(0) { $0 + $1.utf8.count } }
+    var bytes: Int { (snapshots.entries.values.map(\.text) + pinned.values.map(\.text)).reduce(0) { $0 + $1.utf8.count } }
 
     // MARK: Policy (pure, unit-tested)
 
@@ -169,9 +165,10 @@ final class ScreenContext: ObservableObject {
         onStateChange?()
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let fast = Power.onBattery && !manual
+        let languages = Self.preferredRecognitionLanguages(primary: Settings.shared.prefs.exampleLanguage.localeIdentifier)
         Task.detached(priority: manual ? .userInitiated : .utility) {
             let text = await ScreenContext.capture(pid: pid, fieldAX: fieldAX, caretAX: caretAX, scale: scale, fast: fast,
-                                                   wide: manual)
+                                                   wide: manual, languages: languages)
             await MainActor.run {
                 let sc = ScreenContext.shared   // singleton: no capture of `self` across the detached task
                 sc.isCapturing = false
@@ -181,16 +178,14 @@ final class ScreenContext: ObservableObject {
                 let new = Snapshot(text: text ?? "", date: Date(), caret: caret, caretY: caretAX.midY, manual: manual)
                 sc.store(key, new)
                 if manual, !new.text.isEmpty { sc.pinned[pid] = new }
-                if !new.text.isEmpty {
-                    sc.latestText = new.text
-                    sc.lastCapturedAt = new.date
-                }
                 let changed = previous.map { ScreenContext.similarity($0.text, new.text) < 0.85 } ?? !new.text.isEmpty
                 Log.write(String(format: "screen: %@ → %d chars in %.0fms%@", reason.rawValue, new.text.count,
                                  Date().timeIntervalSince(started) * 1000, text == nil ? " (failed)" : changed ? " (changed)" : " (same)"))
+                #if DEBUG || NEXO_DEV
                 if CommandLine.arguments.contains("--probe"), let text {
                     Log.write("screen sample [\(NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?")]: \(String(reflecting: String(text.prefix(300))))")
                 }
+                #endif
                 onDone(new.text, changed)
             }
         }
@@ -198,10 +193,7 @@ final class ScreenContext: ObservableObject {
     }
 
     private func store(_ key: String, _ s: Snapshot) {
-        if snapshots[key] != nil { order.removeAll { $0 == key } }
         snapshots[key] = s
-        order.append(key)
-        while order.count > maxEntries { snapshots[order.removeFirst()] = nil }
         if !s.text.isEmpty {
             latestText = s.text
             lastCapturedAt = s.date
@@ -211,24 +203,25 @@ final class ScreenContext: ObservableObject {
     // MARK: Capture + OCR
 
     private static func capture(pid: pid_t, fieldAX: CGRect?, caretAX: CGRect, scale: CGFloat, fast: Bool,
-                                wide: Bool = false) async -> String? {
+                                wide: Bool = false, languages: [String]) async -> String? {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
             let ownPID = ProcessInfo.processInfo.processIdentifier
             let nexoWindows = content.windows.filter { $0.owningApplication?.processID == ownPID }
             let caretPoint = CGPoint(x: caretAX.midX, y: caretAX.midY)
+            let renderScale = min(scale, 1.25)   // 1.25x preserves crisp UI fonts while cutting pixel count by ~60%
 
             // Capture the entire active display (excluding NexoLLM's own overlays) so all visible windows
             // (e.g. a book/PDF, Obsidian, WhatsApp, TextEdit, browsers) are read together across the screen.
             if let display = content.displays.first(where: { $0.frame.contains(caretPoint) }) ?? content.displays.first {
                 let dFrame = display.frame
                 let config = SCStreamConfiguration()
-                config.width = Int(dFrame.width * min(scale, 2))
-                config.height = Int(dFrame.height * min(scale, 2))
+                config.width = Int(dFrame.width * renderScale)
+                config.height = Int(dFrame.height * renderScale)
                 config.showsCursor = false
                 let filter = SCContentFilter(display: display, excludingWindows: nexoWindows)
                 if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) {
-                    let lines = try recognizeLines(in: image, frame: dFrame, fast: false)
+                    let lines = try recognizeLines(in: image, frame: dFrame, fast: fast, languages: languages)
                     return select(lines, fieldAX: fieldAX, caretAX: caretAX, budget: wide ? 6000 : 4200)
                 }
             }
@@ -243,13 +236,13 @@ final class ScreenContext: ObservableObject {
             }
             let win = window.frame
             let config = SCStreamConfiguration()
-            config.width = Int(win.width * scale)
-            config.height = Int(win.height * scale)
+            config.width = Int(win.width * renderScale)
+            config.height = Int(win.height * renderScale)
             config.showsCursor = false
             config.ignoreShadowsSingleWindow = true
             let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: window),
                                                                    configuration: config)
-            let lines = try recognizeLines(in: image, frame: win, fast: fast)
+            let lines = try recognizeLines(in: image, frame: win, fast: fast, languages: languages)
             return select(lines, fieldAX: fieldAX, caretAX: caretAX, budget: wide ? 6000 : 4200)
         } catch {
             Log.write("screen: error \(error.localizedDescription)")
@@ -260,6 +253,10 @@ final class ScreenContext: ObservableObject {
     /// OCR of an arbitrary screen region (used by the interactive drag-to-select Web Lookup overlay).
     static func recognizeRegion(_ rectAX: CGRect) async -> String? {
         guard rectAX.width > 10, rectAX.height > 8, CGPreflightScreenCaptureAccess() else { return nil }
+        let (scale, primary) = await MainActor.run {
+            (NSScreen.main?.backingScaleFactor ?? 2, Settings.shared.prefs.exampleLanguage.localeIdentifier)
+        }
+        let languages = preferredRecognitionLanguages(primary: primary)
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
             let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -275,7 +272,6 @@ final class ScreenContext: ObservableObject {
             let maxY = min(dFrame.height, padded.maxY - dFrame.minY)
             let local = CGRect(x: minX, y: minY, width: max(0, maxX - minX), height: max(0, maxY - minY))
             guard local.width > 8, local.height > 8 else { return nil }
-            let scale = NSScreen.main?.backingScaleFactor ?? 2
             let config = SCStreamConfiguration()
             config.sourceRect = local
             config.width = max(16, Int(local.width * scale))
@@ -284,9 +280,9 @@ final class ScreenContext: ObservableObject {
             let filter = SCContentFilter(display: display, excludingWindows: overlayWindows)
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
             let isCompactSelection = rectAX.width < 260 && rectAX.height < 75
-            let lines = try recognizeRegionLines(in: image, frame: local, languageCorrection: !isCompactSelection)
+            let lines = try recognizeLines(in: image, frame: local, fast: false, languageCorrection: !isCompactSelection, languages: languages)
             let fallbackLines = lines.isEmpty && isCompactSelection
-                ? (try? recognizeRegionLines(in: image, frame: local, languageCorrection: true)) ?? []
+                ? (try? recognizeLines(in: image, frame: local, fast: false, languageCorrection: true, languages: languages)) ?? []
                 : lines
             let ordered = fallbackLines.sorted { abs($0.1.minY - $1.1.minY) < 6 ? $0.1.minX < $1.1.minX : $0.1.minY < $1.1.minY }
             let joined = ordered.map(\.0).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -296,48 +292,23 @@ final class ScreenContext: ObservableObject {
         }
     }
 
-    private static func preferredRecognitionLanguages() -> [String] {
-        let primary = Settings.shared.prefs.exampleLanguage.localeIdentifier
-        let all = ["en-US", "it-IT", "es-ES", "fr-FR", "de-DE", "pt-PT"].map { $0 }
+    private static func preferredRecognitionLanguages(primary: String) -> [String] {
+        let all = ["en-US", "it-IT", "es-ES", "fr-FR", "de-DE", "pt-PT"]
         let normPrimary = primary.replacingOccurrences(of: "_", with: "-")
         return [normPrimary] + all.filter { $0 != normPrimary }
     }
 
-    private static func recognizeRegionLines(in image: CGImage, frame: CGRect, languageCorrection: Bool) throws -> [(String, CGRect)] {
-        try autoreleasepool {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = languageCorrection
-            if #available(macOS 13.0, *) {
-                request.automaticallyDetectsLanguage = true
-            }
-            request.recognitionLanguages = preferredRecognitionLanguages()
-            try VNImageRequestHandler(cgImage: image).perform([request])
-            return (request.results ?? []).compactMap { obs in
-                guard let s = obs.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines),
-                      s.count >= 2, s.contains(where: { $0.isLetter }) else { return nil }
-                let bb = obs.boundingBox
-                let r = CGRect(x: frame.minX + bb.minX * frame.width,
-                               y: frame.minY + (1 - bb.maxY) * frame.height,
-                               width: bb.width * frame.width,
-                               height: bb.height * frame.height)
-                return (s, r)
-            }
-        }
-    }
-
-    private static func recognizeLines(in image: CGImage, frame: CGRect, fast: Bool) throws -> [(String, CGRect)] {
+    private static func recognizeLines(in image: CGImage, frame: CGRect, fast: Bool,
+                                       languageCorrection: Bool = true, languages: [String]) throws -> [(String, CGRect)] {
         try autoreleasepool {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = fast ? .fast : .accurate
-            request.usesLanguageCorrection = true
-            if #available(macOS 13.0, *) {
-                request.automaticallyDetectsLanguage = true
-            }
-            request.recognitionLanguages = preferredRecognitionLanguages()
+            request.usesLanguageCorrection = languageCorrection
+            request.automaticallyDetectsLanguage = true
+            request.recognitionLanguages = languages
             try VNImageRequestHandler(cgImage: image).perform([request])
             return (request.results ?? []).compactMap { obs in
-                guard let s = obs.topCandidates(1).first?.string.trimmingCharacters(in: .whitespaces),
+                guard let s = obs.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines),
                       s.count >= 2, s.contains(where: { $0.isLetter }) else { return nil }
                 let bb = obs.boundingBox
                 let r = CGRect(x: frame.minX + bb.minX * frame.width,

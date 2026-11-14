@@ -1,0 +1,37 @@
+name: Bug report
+description: Something didn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Tell us what went wrong and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. Open...
+        2. Type...
+        3. Press Tab and see...
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: NexoLLM version (from Menu → About), operating system version, and hardware / RAM.
+      placeholder: e.g. 0.9.1 · 16 GB RAM
+  - type: input
+    id: app
+    attributes:
+      label: App where it happened
+      placeholder: Notes, Mail, Safari, Slack...
+  - type: textarea
+    id: log
+    attributes:
+      label: Crash report or log (optional)
+      description: >
+        Technical events are stored locally in NexoLLM.log (your user logs folder).
+        Typed or suggested text is never written to logs — feel free to paste relevant lines or a crash report.

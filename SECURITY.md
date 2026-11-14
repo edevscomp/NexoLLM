@@ -24,7 +24,7 @@ covers the exact message
 NexoLLM-release-v1:<version>:<sha256 of release installer>
 ```
 
-and is published next to each release installer as `<installer>.sig` (for example `NexoLLM-macos.dmg.sig`). The public key is compiled into the app:
+and is published next to each release installer as `<installer>.sig` (for example `NexoLLM.dmg.sig`). The public key is compiled into the app:
 
 ```
 AUq3fVygMR4hxBPj8avt5+pd3BYGUCdFQVA4QhTfBIo=

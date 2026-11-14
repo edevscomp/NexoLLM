@@ -6,74 +6,48 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
-    var title: String {
+    private var meta: (title: String, tagline: String, symbol: String, color: Color) {
         switch self {
-        case .setup: return L("Overview", "Panoramica")
-        case .general: return L("Behavior", "Comportamento")
-        case .models: return L("Models", "Modelli")
-        case .context: return L("Awareness", "Contesto")
-        case .personalization: return L("Memory & Style", "Memoria e stile")
-        case .emoji: return "Emoji"
-        case .shortcuts: return L("Hotkeys", "Scorciatoie")
-        case .battery: return L("Power", "Alimentazione")
-        case .apps: return L("Per-App Rules", "Regole per app")
-        case .tools: return L("Word Tools", "Strumenti testo")
-        case .statistics: return L("Insights", "Statistiche")
-        case .about: return L("About", "Informazioni")
+        case .setup:
+            return (L("Overview", "Panoramica"), L("Permissions and status.", "Permessi e stato."), "lock.shield", Theme.amber)
+        case .general:
+            return (L("Behavior", "Comportamento"), L("How and when suggestions appear.", "Come e quando compaiono i suggerimenti."),
+                    "gearshape", Color(red: 0.45, green: 0.52, blue: 0.68))
+        case .models:
+            return (L("Models", "Modelli"), L("The model that writes with you.", "Il modello che scrive con te."), "shippingbox", Theme.violet)
+        case .context:
+            return (L("Awareness", "Contesto"), L("What NexoLLM reads to understand the moment.", "Cosa legge NexoLLM per capire il momento."),
+                    "text.viewfinder", Theme.cyan)
+        case .personalization:
+            return (L("Memory & Style", "Memoria e stile"), L("Your style, your history, your data.", "Il tuo stile, la tua cronologia, i tuoi dati."),
+                    "wand.and.stars", Theme.violet)
+        case .emoji:
+            return ("Emoji", L("Emoji while you type.", "Emoji mentre scrivi."), "face.smiling", Color(red: 1.0, green: 0.78, blue: 0.20))
+        case .shortcuts:
+            return (L("Hotkeys", "Scorciatoie"), L("Keys to accept, dismiss and control suggestions.", "Tasti per accettare, ignorare e controllare i suggerimenti."),
+                    "command", Color(red: 0.96, green: 0.36, blue: 0.70))
+        case .battery:
+            return (L("Power", "Alimentazione"), L("Lighter behavior when unplugged.", "Comportamento più leggero a batteria."),
+                    "battery.100.bolt", Theme.mint)
+        case .apps:
+            return (L("Per-App Rules", "Regole per app"), L("Settings for individual apps.", "Impostazioni per le singole app."),
+                    "slider.horizontal.3", Theme.rose)
+        case .tools:
+            return (L("Word Tools", "Strumenti testo"), L("Other words and other phrasings, on demand.", "Altre parole e altre formulazioni, su richiesta."),
+                    "text.badge.plus", Theme.accent)
+        case .statistics:
+            return (L("Insights", "Statistiche"), L("What NexoLLM has written for you.", "Quanto ha scritto NexoLLM per te."),
+                    "chart.bar.fill", Color(red: 0.16, green: 0.72, blue: 0.78))
+        case .about:
+            return (L("About", "Informazioni"), L("Version, updates and project information.", "Versione, aggiornamenti e informazioni sul progetto."),
+                    "info.circle", Theme.blue)
         }
     }
 
-    /// One-line description shown under the page title.
-    var tagline: String {
-        switch self {
-        case .setup: return L("Permissions and status.", "Permessi e stato.")
-        case .general: return L("How and when suggestions appear.", "Come e quando compaiono i suggerimenti.")
-        case .models: return L("The model that writes with you.", "Il modello che scrive con te.")
-        case .context: return L("What NexoLLM reads to understand the moment.", "Cosa legge NexoLLM per capire il momento.")
-        case .personalization: return L("Your style, your history, your data.", "Il tuo stile, la tua cronologia, i tuoi dati.")
-        case .emoji: return L("Emoji while you type.", "Emoji mentre scrivi.")
-        case .shortcuts: return L("Keys to accept, dismiss and control suggestions.", "Tasti per accettare, ignorare e controllare i suggerimenti.")
-        case .battery: return L("Lighter behavior when unplugged.", "Comportamento più leggero a batteria.")
-        case .apps: return L("Settings for individual apps.", "Impostazioni per le singole app.")
-        case .tools: return L("Other words and other phrasings, on demand.", "Altre parole e altre formulazioni, su richiesta.")
-        case .statistics: return L("What NexoLLM has written for you.", "Quanto ha scritto NexoLLM per te.")
-        case .about: return L("Version, updates and project information.", "Versione, aggiornamenti e informazioni sul progetto.")
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .setup: return "lock.shield"
-        case .general: return "gearshape"
-        case .models: return "shippingbox"
-        case .context: return "text.viewfinder"
-        case .personalization: return "wand.and.stars"
-        case .emoji: return "face.smiling"
-        case .shortcuts: return "command"
-        case .battery: return "battery.100.bolt"
-        case .apps: return "slider.horizontal.3"
-        case .tools: return "text.badge.plus"
-        case .statistics: return "chart.bar.fill"
-        case .about: return "info.circle"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .setup: return Theme.amber
-        case .general: return Color(red: 0.45, green: 0.52, blue: 0.68)
-        case .models: return Theme.violet
-        case .context: return Theme.cyan
-        case .personalization: return Theme.violet
-        case .emoji: return Color(red: 1.0, green: 0.78, blue: 0.20)
-        case .shortcuts: return Color(red: 0.96, green: 0.36, blue: 0.70)
-        case .battery: return Theme.mint
-        case .apps: return Theme.rose
-        case .tools: return Theme.accent
-        case .statistics: return Color(red: 0.16, green: 0.72, blue: 0.78)
-        case .about: return Theme.blue
-        }
-    }
+    var title: String { meta.title }
+    var tagline: String { meta.tagline }
+    var symbol: String { meta.symbol }
+    var color: Color { meta.color }
 
     var tab: SettingsTab { SettingsTab.allCases.first { $0.panes.contains(self) } ?? .home }
 }
@@ -86,10 +60,10 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .home: return "Home"
+        case .home: return L("Home", "Home")
         case .engine: return L("Engine", "Motore")
         case .mind: return L("Mind", "Mente")
-        case .input: return "Input"
+        case .input: return L("Input", "Input")
         case .apps: return L("Apps", "App")
         case .about: return L("About", "Info")
         }
@@ -390,7 +364,7 @@ struct SettingsRootView: View {
                     )
                     LanguagePickerButton(compact: true)
                     Button { ModalCenter.shared.current = .walkthrough } label: {
-                        Label("Tour", systemImage: "sparkles").font(.system(size: 11.5, weight: .medium))
+                        Label(L("Tour", "Tour"), systemImage: "sparkles").font(.system(size: 11.5, weight: .medium))
                     }
                     .buttonStyle(GlassButtonStyle(capsule: true))
                     Button { actions.restartServices() } label: {
@@ -498,7 +472,7 @@ struct SettingsRootView: View {
                 LanguagePickerButton(compact: true)
                     .help(L("Choose app language", "Scegli la lingua dell'app"))
                 Button { ModalCenter.shared.current = .walkthrough } label: {
-                    Label("Tour", systemImage: "sparkles").font(.system(size: 11, weight: .medium))
+                    Label(L("Tour", "Tour"), systemImage: "sparkles").font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(GlassButtonStyle(capsule: true))
                 .controlSize(.small)
@@ -535,13 +509,13 @@ struct SettingsRootView: View {
     private func detail(_ pane: SettingsPane) -> some View {
         switch pane {
         case .setup: SetupPane(actions: actions)
-        case .general: GeneralPane(actions: actions)
+        case .general: GeneralPane()
         case .models: ModelsPane()
         case .context: ContextPane(actions: actions)
         case .personalization: PersonalizationPane()
         case .emoji: EmojiPane()
         case .shortcuts: ShortcutsPane()
-        case .battery: BatteryPane(actions: actions)
+        case .battery: BatteryPane()
         case .apps: AppSettingsPane()
         case .tools: WordToolsPane()
         case .statistics: StatisticsPane()
@@ -633,27 +607,41 @@ private struct SubTabs: View {
     }
 }
 
-/// The NexoLLM mark, drawn like the app icon: an accent tile with a text cursor followed by ghost text.
+/// The NexoLLM mark, drawn like the app icon: dark indigo squircle with the slanted cursor nib + sheared ghost matrix.
 struct BrandOrb: View {
     var size: CGFloat = 30
     var body: some View {
         Canvas { ctx, sz in
-            // Coordinates of the 824 pt icon body (scripts/make-icon.swift), top-left origin.
+            // Coordinates of the 824 pt icon body (scripts/make-icon.swift, Option A+B), top-left origin.
             let k = sz.width / 824
-            let thick: CGFloat = sz.width < 24 ? 1.5 : 1   // keep the strokes visible at title-bar size
-            func bar(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> Path {
-                let r = CGRect(x: x * k, y: y * k, width: w * k, height: h * k)
-                return Path(roundedRect: r, cornerRadius: min(r.width, r.height) / 2)
-            }
+            let thick: CGFloat = sz.width < 24 ? 1.28 : 1.0
             let tile = Path(roundedRect: CGRect(origin: .zero, size: sz), cornerRadius: 186 * k, style: .continuous)
-            ctx.fill(tile, with: .linearGradient(Gradient(colors: [Color(red: 0.45, green: 0.52, blue: 1.0),
-                                                                   Color(red: 0.28, green: 0.33, blue: 0.86)]),
-                                                 startPoint: .zero, endPoint: CGPoint(x: 0, y: sz.height)))
-            ctx.fill(bar(252 - 17 * thick, 224, 34 * thick, 376), with: .color(.white))
-            ctx.fill(bar(192, 224, 120, 30 * thick), with: .color(.white))
-            ctx.fill(bar(192, 600 - 30 * thick, 120, 30 * thick), with: .color(.white))
-            ctx.fill(bar(342, 312, 300, 64 * thick), with: .color(.white.opacity(0.45)))
-            ctx.fill(bar(342, 448, 196, 64 * thick), with: .color(.white.opacity(0.28)))
+            ctx.fill(tile, with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color(red: 0.27, green: 0.33, blue: 0.88), location: 0.0),
+                    .init(color: Color(red: 0.14, green: 0.17, blue: 0.52), location: 0.58),
+                    .init(color: Color(red: 0.09, green: 0.10, blue: 0.28), location: 1.0),
+                ]),
+                startPoint: .zero, endPoint: CGPoint(x: 0, y: sz.height)))
+            ctx.stroke(Path(roundedRect: CGRect(origin: .zero, size: sz).insetBy(dx: 0.5, dy: 0.5),
+                            cornerRadius: 185 * k, style: .continuous),
+                       with: .color(.white.opacity(0.16)), lineWidth: max(0.75, 4 * k))
+
+            var nibCtx = ctx
+            nibCtx.translateBy(x: 236 * k, y: 412 * k)
+            nibCtx.rotate(by: .degrees(15))
+            let nw = 72 * k * thick, nh = 420 * k
+            nibCtx.fill(Path(roundedRect: CGRect(x: -nw / 2, y: -nh / 2, width: nw, height: nh), cornerRadius: nw / 2),
+                        with: .color(.white))
+
+            let d = 82 * k * thick
+            func dot(_ cx: CGFloat, _ cy: CGFloat, _ alpha: Double) {
+                let x = cx * k, y = cy * k
+                ctx.fill(Path(ellipseIn: CGRect(x: x - d / 2, y: y - d / 2, width: d, height: d)),
+                         with: .color(.white.opacity(alpha)))
+            }
+            for (x, a) in [(405.4, 0.92), (531.4, 0.54), (657.4, 0.25)] as [(CGFloat, Double)] { dot(x, 332, a) }
+            for (x, a) in [(362.6, 0.68), (488.6, 0.34)] as [(CGFloat, Double)] { dot(x, 492, a) }
         }
         .frame(width: size, height: size)
         .accessibilityLabel(Brand.name)

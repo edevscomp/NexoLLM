@@ -2,7 +2,6 @@ import ServiceManagement
 import SwiftUI
 
 struct GeneralPane: View {
-    let actions: SettingsActions
     @ObservedObject private var settings = Settings.shared
     @State private var loginError: String?
 
@@ -16,8 +15,8 @@ struct GeneralPane: View {
                     }
                 }
                 ToggleRow(L("Show in menu bar", "Mostra nella barra dei menu"),
-                          L("The menu bar icon shows the status: a cursor when active, a pause sign when paused in the current app, dimmed when off. If hidden, open NexoLLM again from your Applications folder to return here.",
-                            "L'icona nella barra dei menu mostra lo stato: un cursore quando è attivo, una pausa quando è in pausa nell'app corrente, attenuata quando è spento. Se è nascosta, riapri NexoLLM dalla cartella Applicazioni per tornare qui."),
+                          L("The menu bar icon shows the status: clear when active, a pause sign when paused in the current app, dimmed when off. If hidden, open NexoLLM again from your Applications folder to return here.",
+                            "L'icona nella barra dei menu mostra lo stato: nitida quando è attiva, con una pausa quando è sospesa nell'app corrente, attenuata quando è spenta. Se è nascosta, riapri NexoLLM dalla cartella Applicazioni per tornare qui."),
                           isOn: $settings.prefs.showMenuBarIcon)
                 SettingRow(L("Appearance", "Aspetto")) {
                     GlassSegmentedPicker($settings.prefs.appearance) { $0.label }

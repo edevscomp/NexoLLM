@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct BatteryPane: View {
-    let actions: SettingsActions
     @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var models = ModelManager.shared
     @State private var onBattery = Power.onBattery
 
     private static let chooseTag = "\u{0}choose"
@@ -44,9 +44,17 @@ struct BatteryPane: View {
     }
 
     private var batteryOptions: [(String, String, Bool)] {
-        let path = settings.prefs.batteryModelPath
+        let current = settings.prefs.batteryModelPath
+        var seen = Set<String>()
+        var modelRows: [(String, String, Bool)] = models.installed.compactMap { m in
+            guard seen.insert(m.path).inserted else { return nil }
+            return (m.path, "\(m.name) · \(Fmt.bytes(m.bytes))", false)
+        }
+        if !current.isEmpty, seen.insert(current).inserted {
+            modelRows.append((current, SettingsUI.fileName(current), false))
+        }
         return [("", L("Same as plugged in", "Uguale a quello con alimentatore"), false)]
-            + (path.isEmpty ? [] : [(path, SettingsUI.fileName(path), false)])
+            + modelRows
             + [(Self.chooseTag, L("Choose GGUF…", "Scegli GGUF…"), true)]
     }
 

@@ -83,11 +83,13 @@ final class Stats: ObservableObject {
         self.perApp = perApp
     }
 
+    #if DEBUG || NEXO_DEV
     /// Populates preview data in memory without touching disk (used by `--render-ui`).
     func loadPreview(_ days: [String: Day], perApp: [String: Int]) {
         self.days = days
         self.perApp = perApp
     }
+    #endif
 
     func record(words: Int, app: String, on date: Date = Date()) {
         let key = Stats.dayFormatter.string(from: date)
@@ -162,38 +164,41 @@ final class Stats: ObservableObject {
 
 /// Power source state, updated by an IOKit notification (no polling).
 enum Power {
-    private(set) static var onBattery: Bool = readOnBattery()
+    private static let initial = readState()
+    private(set) static var onBattery: Bool = initial.onBattery
     /// Battery charge in percent (100 on desktops). Refreshed by the same IOKit notification.
-    private(set) static var batteryLevel: Int = readBatteryLevel()
+    private(set) static var batteryLevel: Int = initial.level
     private static var source: CFRunLoopSource?
     static let changed = Notification.Name("NexoLLMPowerSourceChanged")
 
-    private static func readOnBattery() -> Bool {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() else { return false }
-        return (type as String) == kIOPSBatteryPowerValue
-    }
-
-    private static func readBatteryLevel() -> Int {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return 100 }
-        for ps in list {
-            guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
-                  let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
-            return cur * 100 / max
+    private static func readState() -> (onBattery: Bool, level: Int) {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return (false, 100) }
+        let onBat = (IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String?) == kIOPSBatteryPowerValue
+        var level = 100
+        if let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] {
+            for ps in list {
+                if let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
+                   let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 {
+                    level = cur * 100 / max
+                    break
+                }
+            }
         }
-        return 100
+        return (onBat, level)
     }
 
-    /// Starts listening for plug/unplug events; posts `Power.changed` on the main thread.
+    /// Starts listening for plug/unplug and low-battery threshold crossings; posts `Power.changed` on the main thread.
     static func startMonitoring() {
         guard source == nil else { return }
         let callback: IOPowerSourceCallbackType = { _ in
-            Power.batteryLevel = Power.readBatteryLevel()
-            let now = Power.readOnBattery()
-            guard now != Power.onBattery else { return }
-            Power.onBattery = now
-            NotificationCenter.default.post(name: Power.changed, object: nil)
+            let wasLow = Power.batteryLevel <= 20
+            let next = Power.readState()
+            Power.batteryLevel = next.level
+            let crossedLow = Power.onBattery && ((next.level <= 20) != wasLow)
+            if next.onBattery != Power.onBattery || crossedLow {
+                Power.onBattery = next.onBattery
+                NotificationCenter.default.post(name: Power.changed, object: nil)
+            }
         }
         if let s = IOPSNotificationCreateRunLoopSource(callback, nil)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), s, .defaultMode)

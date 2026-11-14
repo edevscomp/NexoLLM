@@ -8,6 +8,57 @@ enum SuggestionText {
         let userEndedWithSpace: Bool
     }
 
+    /// Horizontal whitespace excluding newline (ASCII space, tab, NBSP, narrow NBSP, figure space).
+    static func isSpace(_ ch: Character) -> Bool {
+        ch == " " || ch == "\u{00A0}" || ch == "\u{202F}" || ch == "\u{2007}"
+    }
+
+    static func isHorizontalSpace(_ ch: Character) -> Bool {
+        ch == "\t" || isSpace(ch)
+    }
+
+    /// Normalizes WebKit / rich-editor non-breaking spaces to standard ASCII spaces while preserving tabs/newlines.
+    static func normalizeSpaces(_ s: String) -> String {
+        guard s.contains(where: { $0 == "\u{00A0}" || $0 == "\u{202F}" || $0 == "\u{2007}" }) else { return s }
+        return String(s.map { isSpace($0) ? " " : $0 })
+    }
+
+    /// Reconciles a suggestion with characters typed after `basePrefix` (e.g. 1-keystroke AX lag)
+    /// and guarantees no extra leading space is inserted if `livePrefix` already ends in whitespace.
+    static func reconcile(suggestion: String, basePrefix: String?, livePrefix: String?) -> String {
+        var out = suggestion
+        let normLive = livePrefix.map(normalizeSpaces)
+        if let base = basePrefix, let normLive {
+            let normBase = normalizeSpaces(base)
+            var delta: Substring?
+            if normLive.hasPrefix(normBase) {
+                delta = normLive.dropFirst(normBase.count)
+            } else if normBase.count >= 64 {
+                for drop in 1...min(32, normBase.count - 48) {
+                    let tail = normBase.dropFirst(drop)
+                    if normLive.hasPrefix(tail) {
+                        delta = normLive.dropFirst(tail.count)
+                        break
+                    }
+                }
+            }
+            if let delta, !delta.isEmpty {
+                let normOut = normalizeSpaces(out)
+                if normOut.hasPrefix(delta) {
+                    out = String(out.dropFirst(delta.count))
+                } else if delta.hasPrefix(normOut) {
+                    return ""
+                }
+            }
+        }
+        if let normLive, let last = normLive.last, isHorizontalSpace(last) {
+            while let first = out.first, isHorizontalSpace(first) {
+                out.removeFirst()
+            }
+        }
+        return out
+    }
+
     /// Builds the prompt from the text before the caret.
     /// The window start is aligned to 512-unit blocks so it stays put while typing, letting the
     /// engine reuse its KV cache instead of re-reading the whole context on every keystroke.
@@ -21,11 +72,11 @@ enum SuggestionText {
         if absStart > 0, let ws = text.firstIndex(where: { $0.isWhitespace }) {
             text = String(text[text.index(after: ws)...])   // don't start mid-word
         }
-        text = normalizeLinks(text)
+        text = normalizeSpaces(normalizeLinks(text))
         // SentencePiece tokens carry their leading space ("▁word"), so a prompt ending in a space
         // confuses the model. Strip it and expect the completion to begin with a space instead.
-        let endedWithSpace = text.last == " " || text.last == "\t"
-        while text.last == " " || text.last == "\t" { text.removeLast() }
+        let endedWithSpace = text.last.map(isHorizontalSpace) ?? false
+        while let last = text.last, isHorizontalSpace(last) { text.removeLast() }
         return Prompt(text: header + text, userEndedWithSpace: endedWithSpace)
     }
 
@@ -70,10 +121,10 @@ enum SuggestionText {
         guard letters >= 1, start > text.startIndex else { return nil }
         let before = text.index(before: start)
         if text[before].isNumber || "_./:=?&@#".contains(text[before]) { return nil }   // "3pm", identifiers, links
-        let cut = text[before] == " " ? before : start
-        let stem = String(text[..<cut])
+        let cut = isSpace(text[before]) ? before : start
+        let stem = normalizeSpaces(String(text[..<cut]))
         guard stem.contains(where: { !$0.isWhitespace }) else { return nil }
-        return (stem, String(text[cut...]))
+        return (stem, normalizeSpaces(String(text[cut...])))
     }
 
     /// The whole word a candidate continuation produces: the half-typed `partial` plus the letters the model
@@ -110,14 +161,14 @@ enum SuggestionText {
         if let clipboard, !clipboard.isEmpty {
             parts.append("[Clipboard]\n" + String(clipboard.prefix(360)))
         }
-        if let memory, !memory.isEmpty {
-            parts.append("[Earlier, the author wrote (background — mention only if relevant)]\n" + String(memory.prefix(520)))
-        }
         if let screen, !screen.isEmpty {
             parts.append("[Visible context on screen — use exact names, dates, facts and concepts from here]\n" + String(screen.suffix(screenBudget)))
         }
         if let fields, !fields.isEmpty {
             parts.append("[Other fields of this window — keep facts like dates, numbers, titles and names consistent]\n" + String(fields.prefix(520)))
+        }
+        if let memory, !memory.isEmpty {
+            parts.append("[Earlier, the author wrote (background — mention only if relevant)]\n" + String(memory.prefix(520)))
         }
         if let audio, !audio.isEmpty {
             parts.append("[Live audio & call transcript — continue with the concepts, names and topics mentioned here]\n"
@@ -234,6 +285,7 @@ enum SuggestionText {
     /// True when Tab should keep its normal meaning (indent): the caret is at the start of a line,
     /// or right after a list marker ("- ", "* ", "1. ", "- [ ] ") in Markdown editors like Obsidian.
     static func isIndentPosition(_ prefix: String) -> Bool {
+        let prefix = normalizeSpaces(prefix)
         let line = prefix.split(separator: "\n", omittingEmptySubsequences: false).last.map(String.init) ?? prefix
         guard !prefix.isEmpty else { return false }
         let t = line.trimmingCharacters(in: CharacterSet(charactersIn: " \t"))
@@ -255,6 +307,7 @@ enum SuggestionText {
         for u in s.unicodeScalars {
             switch u.value {
             case 0x09, 0x0A: out.append(u)
+            case 0xA0, 0x2007, 0x202F: out.append(" ")
             case 0x00..<0x20, 0x7F, 0x80..<0xA0, 0x202A...0x202E, 0x2066...0x2069: continue
             default: out.append(u)
             }
@@ -264,10 +317,11 @@ enum SuggestionText {
 
     // MARK: Context labels
 
-    /// Pieces of the context block that a base model copies into its output when it runs out of ideas.
+    /// Pieces of the context block or chat-template markers that a model copies into its output when it runs out of ideas.
     private static let contextMarkers = ["Draft (", "Visible context", "Author profile", "writing samples",
                                          "Other fields of this window", "Earlier, the author", "How the author writes",
-                                         "Live lecture", "Live audio"]
+                                         "Live lecture", "Live audio", "<|im_end|>", "<|im_start|>", "<|endoftext|>",
+                                         "<end_of_turn>", "<start_of_turn>", "\nUser:", "\nAssistant:"]
 
     /// Cuts the output where it starts reproducing the context block ("[Draft (Mail)]", "Visible context…").
     static func cutAtContextLabel(_ s: String) -> String {
@@ -291,20 +345,21 @@ enum SuggestionText {
 
     /// Cleans up raw model output into what we show as ghost text.
     static func clean(_ raw: String, userEndedWithSpace: Bool, truncated: Bool, prefix: String = "") -> String {
-        var s = cutAtContextLabel(raw)
+        var s = normalizeSpaces(cutAtContextLabel(raw))
         if userEndedWithSpace {
             // The user already typed the space; the model must start a new word.
-            guard let first = s.first, first == " " || first == "\t" else { return "" }
-            while s.first == " " || s.first == "\t" { s.removeFirst() }
+            guard let first = s.first, isHorizontalSpace(first) else { return "" }
+            while let first = s.first, isHorizontalSpace(first) { s.removeFirst() }
             // …never a punctuation mark: that would produce "parola ," / "parola ." in the document.
             if let f = s.first, closingPunctuation.contains(f) { return "" }
-        } else if let f = s.first, f == " ", let second = s.dropFirst().first(where: { $0 != " " }),
+        } else if let f = s.first, isSpace(f), let second = s.dropFirst().first(where: { !isSpace($0) }),
                   closingPunctuation.contains(second) {
             // " , come stai" after "ciao": the comma attaches to the word.
-            s = String(s.drop(while: { $0 == " " }))
+            s = String(s.drop(while: isSpace))
         }
-        // "ciao , come" -> "ciao, come" anywhere inside the suggestion.
-        s = gluePunctuation(s)
+        // "ciao , come" -> "ciao, come" anywhere inside the suggestion (preserving emoticons & French spacing).
+        let isFrench = prefix.contains("«") || prefix.contains("ç") || Spelling.markerLanguage(of: String(prefix.suffix(120))) == "fr"
+        s = gluePunctuation(s, french: isFrench)
         // Drop a half-generated last word when we hit the token limit.
         if truncated, let lastSpace = s.lastIndex(where: { $0.isWhitespace }),
            s[s.index(after: lastSpace)...].count > 0,
@@ -374,16 +429,22 @@ enum SuggestionText {
     /// Punctuation that closes a word/clause and must never follow a space.
     static let closingPunctuation: Set<Character> = [",", ".", ";", ":", "!", "?", ")", "…"]
 
-    /// "ciao , come" -> "ciao, come" (keeps "...", leaves everything else alone).
-    private static func gluePunctuation(_ s: String) -> String {
+    /// "ciao , come" -> "ciao, come" (keeps "...", emoticons ":)", and French spacing before !?:;).
+    private static func gluePunctuation(_ s: String, french: Bool = false) -> String {
         guard s.contains(" ") else { return s }
+        let chars = Array(s)
         var out = ""
         out.reserveCapacity(s.count)
         var pendingSpaces = ""
-        for ch in s {
+        for (idx, ch) in chars.enumerated() {
             if ch == " " { pendingSpaces.append(ch); continue }
             if !pendingSpaces.isEmpty {
-                if !(closingPunctuation.contains(ch) && !out.isEmpty) { out += pendingSpaces }
+                let next = idx + 1 < chars.count ? chars[idx + 1] : nil
+                let isEmoticon = (ch == ":" || ch == ";") && (next == ")" || next == "(" || next == "D" || next == "P" || next == "-")
+                let isFrenchTwoPart = french && (ch == "!" || ch == "?" || ch == ":" || ch == ";")
+                if !(closingPunctuation.contains(ch) && !out.isEmpty && !isEmoticon && !isFrenchTwoPart) {
+                    out += pendingSpaces
+                }
                 pendingSpaces = ""
             }
             out.append(ch)
@@ -407,7 +468,7 @@ enum SuggestionText {
         var word = String(s[..<i])
         var rest = String(s[i...])
         if trailingSpace {
-            if rest.first == " " { word += " "; rest.removeFirst() }
+            if let first = rest.first, isSpace(first) { word += " "; rest.removeFirst() }
             else if rest.isEmpty { word += " " }
         }
         return (word, rest)

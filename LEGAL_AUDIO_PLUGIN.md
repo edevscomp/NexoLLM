@@ -26,7 +26,7 @@ after you read this notice and agree to it in Settings → Mind → Awareness.
 - Listening is **always off** when NexoLLM starts: it never resumes by itself.
 - While listening, the NexoLLM status icon is **always shown** (it can't be hidden), next to the operating
   system's own microphone indicator.
-- Listening **stops by itself** when the screen locks, when the computer sleeps, and after one hour without
+- Listening **stops by itself** when the screen locks, when the computer sleeps, and after 10 minutes without
   typing.
 - You can see the live transcript and clear it at any time (Settings → Mind → Awareness, Privacy Inspector).
 

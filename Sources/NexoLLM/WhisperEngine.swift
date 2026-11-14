@@ -86,6 +86,9 @@ final class WhisperEngine: @unchecked Sendable {
         }
         guard run(language ?? "auto") else { return nil }
         var detected = String(cString: whisper_lang_str(whisper_full_lang_id(ctx)))
+        let segCount = whisper_full_n_segments(ctx)
+        let hasSpeech = (0..<segCount).contains { whisper_full_get_segment_no_speech_prob(ctx, $0) < 0.55 }
+        guard hasSpeech else { return nil }   // skip second GPU pass on silence/room noise
         // Automatic, but the speaker isn't in one of the expected languages (or detection was unsure on a very
         // short phrase): transcribe again in the most recent expected one.
         if language == nil, !allowed.contains(detected), let fallback = allowed.first {

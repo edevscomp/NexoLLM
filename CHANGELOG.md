@@ -4,12 +4,19 @@ Every release of NexoLLM, newest first. Versions follow [Semantic Versioning](ht
 NexoLLM is in early-stage development: until 1.0 a minor version (0.x.0) can refine behavior, and a patch (0.x.y) only fixes things.
 The build number in parentheses grows with every commit.
 
+## [0.9.2] - 2026-11-14
+
+### Minimalist identity, fluid menu bar animations & Tab completion fixes
+- Introduced the minimalist new NexoLLM app icon and borderless menu bar stencil with smooth, zero-idle micro-animations (active/paused/wake morphing, Tab-accept ripple, loading wave, screen viewfinder focus, and voice-reactive Audio Context bars respecting Reduce Motion).
+- Fixed inline `Tab` completion character duplication and double spaces across rich/web editors via non-breaking space (`\u{00A0}`) normalization, live caret-prefix reconciliation on 1-keystroke Accessibility lag, paired `.keyUp` event swallowing, and asynchronous text injection.
+- Unified OS-neutral copy, localized `"Ciao"` examples, `Awareness` navigation labels, and the `10-minute` audio idle safeguard across all 6 languages (`EN`, `IT`, `ES`, `FR`, `DE`, `PT`), added root `.github/ISSUE_TEMPLATE` forms, and hardened Quick Menu hover handling.
+
 ## [0.9.1] - 2026-11-12
 
-### Polished installer, UI & contributors
+### Polished installer & UI fixes
 - Upgraded the `.dmg` installer builder to write native bookmark records (`pBBk`) and deterministic binary `.DS_Store` icon-view, window bounds and Retina Aurora/Glass background records directly.
 - Fixed modal scrollbar dragging in **About** so scrolling inside **What's New**, **Privacy & License** and **Report a Bug** never drags the application window.
-- Enabled the **Cancel** button in **Report a Bug** even when the text field is empty, and added **Claude** and **Gemini** to **Contributors**.
+- Enabled the **Cancel** button in **Report a Bug** even when the text field is empty.
 - Added `@MainActor` test isolation annotations and aligned Swift target settings so automated CI passes cleanly.
 
 ## [0.9.0] - 2026-11-11

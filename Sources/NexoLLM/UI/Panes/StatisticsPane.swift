@@ -175,8 +175,10 @@ struct StackedPastelHistogram: View {
     let buckets: [StackedBucket]
     let grouping: StatisticsPane.Grouping
     let palette: AppPalette
+    #if DEBUG || NEXO_DEV
     /// Used by `--render-ui` to showcase the hover tooltip on a specific column index without affecting runtime state.
     static var previewHoverBucketIndex: Int? = nil
+    #endif
     @State private var hover: HoverKey?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -250,10 +252,14 @@ struct StackedPastelHistogram: View {
                 }
 
                 // Tooltip.
+                #if DEBUG || NEXO_DEV
                 let activeHover: HoverKey? = hover ?? Self.previewHoverBucketIndex.flatMap { idx in
                     guard buckets.indices.contains(idx), let topSeg = buckets[idx].segments.first else { return nil }
                     return HoverKey(date: buckets[idx].date, app: topSeg.app)
                 }
+                #else
+                let activeHover: HoverKey? = hover
+                #endif
                 if let activeHover, let bIdx = buckets.firstIndex(where: { $0.date == activeHover.date }),
                    let seg = buckets[bIdx].segments.first(where: { $0.app == activeHover.app }) {
                     let b = buckets[bIdx]
