@@ -158,8 +158,8 @@ final class SuggestionTextTests: XCTestCase {
         for state in [MenuBarIcon.State.active, .paused, .off, .loading, .reading, .error] {
             let img = MenuBarIcon.image(for: state)
             XCTAssertTrue(img.isTemplate)
-            XCTAssertEqual(img.size.width, 18)
-            XCTAssertEqual(img.size.height, 18)
+            XCTAssertEqual(img.size.width, MenuBarIcon.pointSize)
+            XCTAssertEqual(img.size.height, MenuBarIcon.pointSize)
         }
     }
 
@@ -404,12 +404,13 @@ final class SuggestionTextTests: XCTestCase {
         for state in [MenuBarIcon.State.active, .paused, .loading, .reading, .smartScreen, .readingScreen] {
             let img = MenuBarIcon.image(for: state)
             XCTAssertTrue(img.isTemplate)
-            XCTAssertEqual(img.size.width, 18)
+            XCTAssertEqual(img.size.width, MenuBarIcon.pointSize)
         }
     }
 
     @MainActor
     func testMenuBarIconAnimationsAndAnimatorLifecycle() {
+        let size = NSSize(width: MenuBarIcon.pointSize, height: MenuBarIcon.pointSize)
         let pairs: [(MenuBarIcon.State, MenuBarIcon.State)] = [
             (.active, .paused), (.paused, .active), (.smartScreen, .paused), (.paused, .smartScreen),
             (.active, .smartScreen), (.off, .active), (.active, .off), (.loading, .active), (.reading, .active)
@@ -418,14 +419,14 @@ final class SuggestionTextTests: XCTestCase {
             for p in [0.0, 0.25, 0.5, 0.75, 1.0] as [CGFloat] {
                 let img = MenuBarIcon.transitionImage(from: from, to: to, progress: p)
                 XCTAssertTrue(img.isTemplate)
-                XCTAssertEqual(img.size, NSSize(width: 18, height: 18))
+                XCTAssertEqual(img.size, size)
             }
         }
         for state in [MenuBarIcon.State.active, .smartScreen] {
             for p in [0.0, 0.25, 0.5, 0.75, 1.0] as [CGFloat] {
                 let img = MenuBarIcon.acceptPulseImage(for: state, progress: p)
                 XCTAssertTrue(img.isTemplate)
-                XCTAssertEqual(img.size, NSSize(width: 18, height: 18))
+                XCTAssertEqual(img.size, size)
             }
         }
         for state in [MenuBarIcon.State.loading, .reading, .readingScreen] {
@@ -433,7 +434,7 @@ final class SuggestionTextTests: XCTestCase {
             for ph in [0.0, 0.9, 2.4] as [CGFloat] {
                 let img = MenuBarIcon.animatedImage(for: state, phase: ph, level: 0.6)
                 XCTAssertTrue(img.isTemplate)
-                XCTAssertEqual(img.size, NSSize(width: 18, height: 18))
+                XCTAssertEqual(img.size, size)
             }
         }
         XCTAssertFalse(MenuBarAnimator.isLooping(.active))

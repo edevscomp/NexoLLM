@@ -23,10 +23,28 @@ final class NetworkMonitor: ObservableObject {
 /// Borderless minimalist monochrome stencil for the macOS menu bar (Tailscale / Voissaint / Passwords style).
 enum MenuBarIcon {
     enum State: Hashable { case active, smartScreen, paused, off, loading, reading, readingScreen, error }
-    enum Style { case a, b, ab }
 
-    static let style: Style = .ab
+    static let pointSize: CGFloat = 20
+    private static let designScale: CGFloat = 1.20
     private static var cache: [State: NSImage] = [:]
+
+    private struct DotSpec {
+        let x: CGFloat
+        let y: CGFloat
+        let alpha: CGFloat
+        let col: Int
+    }
+
+    private static let dots: [DotSpec] = {
+        let shift = CGFloat(2.25 * tan(15.0 * Double.pi / 180.0))
+        return [
+            DotSpec(x: 8.50 + shift, y: 11.25, alpha: 0.94, col: 0),
+            DotSpec(x: 11.65 + shift, y: 11.25, alpha: 0.56, col: 1),
+            DotSpec(x: 14.80 + shift, y: 11.25, alpha: 0.28, col: 2),
+            DotSpec(x: 8.50 - shift, y: 6.75, alpha: 0.70, col: 0),
+            DotSpec(x: 11.65 - shift, y: 6.75, alpha: 0.36, col: 1)
+        ]
+    }()
 
     private static func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
     private static func easeOutCubic(_ t: CGFloat) -> CGFloat {
@@ -35,8 +53,16 @@ enum MenuBarIcon {
     }
 
     private static func makeTemplateImage(_ draw: @escaping () -> Void) -> NSImage {
-        let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+        let s = pointSize
+        let img = NSImage(size: NSSize(width: s, height: s), flipped: false) { _ in
+            NSGraphicsContext.saveGraphicsState()
+            let xform = NSAffineTransform()
+            xform.translateX(by: s / 2, yBy: s / 2)
+            xform.scale(by: designScale)
+            xform.translateX(by: -9.0, yBy: -9.0)
+            xform.concat()
             draw()
+            NSGraphicsContext.restoreGraphicsState()
             return true
         }
         img.isTemplate = true
@@ -44,12 +70,12 @@ enum MenuBarIcon {
         return img
     }
 
-    private static func tiltedCapsule(center: NSPoint, width: CGFloat, height: CGFloat, angle: CGFloat, alpha: CGFloat = 1) {
+    private static func tiltedCapsule(center: NSPoint, width: CGFloat, height: CGFloat, angle: CGFloat = 0, alpha: CGFloat = 1) {
         guard alpha > 0.005 else { return }
         NSGraphicsContext.saveGraphicsState()
         let xform = NSAffineTransform()
         xform.translateX(by: center.x, yBy: center.y)
-        xform.rotate(byDegrees: -angle)
+        if angle != 0 { xform.rotate(byDegrees: -angle) }
         xform.concat()
         NSColor.black.withAlphaComponent(alpha).setFill()
         let r = NSRect(x: -width / 2, y: -height / 2, width: width, height: height)
@@ -63,45 +89,23 @@ enum MenuBarIcon {
         NSBezierPath(ovalIn: NSRect(x: x - d / 2, y: y - d / 2, width: d, height: d)).fill()
     }
 
-    private static let abTopDots: [(x: CGFloat, alpha: CGFloat, col: Int)] = [
-        (8.6, 0.94, 0), (11.7, 0.56, 1), (14.8, 0.28, 2)
-    ]
-    private static let abBottomDots: [(x: CGFloat, alpha: CGFloat, col: Int)] = [
-        (8.6, 0.70, 0), (11.7, 0.36, 1)
-    ]
-
     private static func drawCoreMark(alpha: CGFloat = 1) {
-        switch style {
-        case .a:
-            tiltedCapsule(center: NSPoint(x: 4.6, y: 9.0), width: 1.85, height: 10.6, angle: 0, alpha: alpha)
-            for (x, a) in [(8.5, 0.94), (11.6, 0.56), (14.7, 0.28)] as [(CGFloat, CGFloat)] { dot(x, 11.1, 2.2, alpha * a) }
-            for (x, a) in [(8.5, 0.70), (11.6, 0.36)] as [(CGFloat, CGFloat)] { dot(x, 6.9, 2.2, alpha * a) }
-        case .b:
-            tiltedCapsule(center: NSPoint(x: 7.0, y: 9.0), width: 2.25, height: 11.2, angle: 16, alpha: alpha)
-            tiltedCapsule(center: NSPoint(x: 11.6, y: 8.5), width: 2.25, height: 8.5, angle: 16, alpha: alpha * 0.44)
-        case .ab:
-            let angle: CGFloat = 15
-            let t = tan(angle * .pi / 180)
-            tiltedCapsule(center: NSPoint(x: 4.8, y: 9.0), width: 1.9, height: 10.8, angle: angle, alpha: alpha)
-            let ts = 2.1 * t, bs = -2.1 * t
-            for d in abTopDots { dot(d.x + ts, 11.1, 2.15, alpha * d.alpha) }
-            for d in abBottomDots { dot(d.x + bs, 6.9, 2.15, alpha * d.alpha) }
-        }
+        tiltedCapsule(center: NSPoint(x: 4.65, y: 9.0), width: 2.05, height: 11.4, angle: 15, alpha: alpha)
+        for d in dots { dot(d.x, d.y, 2.30, alpha * d.alpha) }
     }
 
-    private static func drawViewfinder(inset: CGFloat = 0, dotDiameter: CGFloat = 3.0, alphaScale: CGFloat = 1) {
+    private static func drawViewfinder(inset: CGFloat = 0, dotDiameter: CGFloat = 3.1, alphaScale: CGFloat = 1) {
         guard alphaScale > 0.005 else { return }
         let b = NSBezierPath()
+        let lo = 3.2 + inset, hi = 14.8 - inset
         for (x0, y0, x1, y1, x2, y2) in [
-            (3.4 + inset, 11.2, 3.4 + inset, 14.2 - inset, 6.4, 14.2 - inset),
-            (11.6, 14.2 - inset, 14.6 - inset, 14.2 - inset, 14.6 - inset, 11.2),
-            (3.4 + inset, 6.8, 3.4 + inset, 3.8 + inset, 6.4, 3.8 + inset),
-            (11.6, 3.8 + inset, 14.6 - inset, 3.8 + inset, 14.6 - inset, 6.8)
+            (lo, 11.3, lo, hi, 6.3, hi), (11.7, hi, hi, hi, hi, 11.3),
+            (lo, 6.7, lo, lo, 6.3, lo), (11.7, lo, hi, lo, hi, 6.7)
         ] as [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] {
             b.move(to: NSPoint(x: x0, y: y0)); b.line(to: NSPoint(x: x1, y: y1)); b.line(to: NSPoint(x: x2, y: y2))
         }
         NSColor.black.withAlphaComponent(alphaScale).setStroke()
-        b.lineWidth = 1.45; b.lineCapStyle = .round; b.lineJoinStyle = .round; b.stroke()
+        b.lineWidth = 1.55; b.lineCapStyle = .round; b.lineJoinStyle = .round; b.stroke()
         dot(9.0, 9.0, dotDiameter, alphaScale)
     }
 
@@ -112,23 +116,23 @@ enum MenuBarIcon {
             drawCoreMark(alpha: alphaScale)
         case .smartScreen:
             drawCoreMark(alpha: alphaScale)
-            dot(15.3, 14.3, 2.5, alphaScale)
+            dot(15.2, 14.35, 2.55, alphaScale)
         case .paused:
-            tiltedCapsule(center: NSPoint(x: 6.7, y: 9.0), width: 2.15, height: 9.8, angle: 0, alpha: 0.92 * alphaScale)
-            tiltedCapsule(center: NSPoint(x: 11.3, y: 9.0), width: 2.15, height: 9.8, angle: 0, alpha: 0.45 * alphaScale)
+            tiltedCapsule(center: NSPoint(x: 6.6, y: 9.0), width: 2.2, height: 10.2, alpha: 0.92 * alphaScale)
+            tiltedCapsule(center: NSPoint(x: 11.4, y: 9.0), width: 2.2, height: 10.2, alpha: 0.45 * alphaScale)
         case .off:
             drawCoreMark(alpha: 0.30 * alphaScale)
         case .loading:
-            for (x, a) in [(5.0, 0.95), (9.0, 0.60), (13.0, 0.32)] as [(CGFloat, CGFloat)] { dot(x, 9.0, 2.5, a * alphaScale) }
+            for (x, a) in [(4.8, 0.95), (9.0, 0.60), (13.2, 0.32)] as [(CGFloat, CGFloat)] { dot(x, 9.0, 2.6, a * alphaScale) }
         case .reading:
-            for (x, h, a) in [(4.0, 4.8, 0.58), (7.3, 10.6, 0.96), (10.7, 7.8, 0.86), (14.0, 4.2, 0.52)] as [(CGFloat, CGFloat, CGFloat)] {
-                tiltedCapsule(center: NSPoint(x: x, y: 9.0), width: 1.75, height: h, angle: 0, alpha: a * alphaScale)
+            for (x, h, a) in [(3.9, 5.0, 0.58), (7.3, 11.0, 0.96), (10.7, 8.2, 0.86), (14.1, 4.4, 0.52)] as [(CGFloat, CGFloat, CGFloat)] {
+                tiltedCapsule(center: NSPoint(x: x, y: 9.0), width: 1.85, height: h, alpha: a * alphaScale)
             }
         case .readingScreen:
-            drawViewfinder(inset: 0, dotDiameter: 3.0, alphaScale: alphaScale)
+            drawViewfinder(alphaScale: alphaScale)
         case .error:
-            tiltedCapsule(center: NSPoint(x: 9.0, y: 11.2), width: 2.1, height: 6.8, angle: 0, alpha: alphaScale)
-            dot(9.0, 4.8, 2.3, alphaScale)
+            tiltedCapsule(center: NSPoint(x: 9.0, y: 11.3), width: 2.2, height: 7.2, alpha: alphaScale)
+            dot(9.0, 4.7, 2.4, alphaScale)
         }
     }
 
@@ -147,63 +151,54 @@ enum MenuBarIcon {
         let t = easeOutCubic(clamped)
         let isCore: (State) -> Bool = { $0 == .active || $0 == .smartScreen }
 
-        let tan15 = CGFloat(tan(15 * CGFloat.pi / 180))
         return makeTemplateImage {
             if (isCore(from) && to == .paused) || (from == .paused && isCore(to)) {
                 let p = to == .paused ? t : (1 - t)
-                let ts = 2.1 * tan15, bs = -2.1 * tan15
-                tiltedCapsule(center: NSPoint(x: lerp(4.8, 6.7, p), y: 9.0),
-                              width: lerp(1.9, 2.15, p),
-                              height: lerp(10.8, 9.8, p),
+                tiltedCapsule(center: NSPoint(x: lerp(4.65, 6.6, p), y: 9.0),
+                              width: lerp(2.05, 2.2, p),
+                              height: lerp(11.4, 10.2, p),
                               angle: lerp(15, 0, p),
                               alpha: lerp(1.0, 0.92, p))
                 let dotFade = max(0, 1 - p * 1.45)
                 if dotFade > 0.01 {
-                    let size = lerp(2.15, 1.4, p)
-                    for d in abTopDots { dot(lerp(d.x + ts, 11.3, p), lerp(11.1, 9.0, p), size, d.alpha * dotFade) }
-                    for d in abBottomDots { dot(lerp(d.x + bs, 11.3, p), lerp(6.9, 9.0, p), size, d.alpha * dotFade) }
+                    let size = lerp(2.30, 1.45, p)
+                    for d in dots { dot(lerp(d.x, 11.4, p), lerp(d.y, 9.0, p), size, d.alpha * dotFade) }
                 }
                 let barGrow = max(0, (p - 0.12) / 0.88)
                 if barGrow > 0.01 {
-                    tiltedCapsule(center: NSPoint(x: 11.3, y: 9.0),
-                                  width: lerp(1.6, 2.15, barGrow),
-                                  height: lerp(3.8, 9.8, barGrow),
+                    tiltedCapsule(center: NSPoint(x: 11.4, y: 9.0),
+                                  width: lerp(1.65, 2.2, barGrow),
+                                  height: lerp(4.0, 10.2, barGrow),
                                   angle: lerp(15, 0, barGrow),
                                   alpha: 0.45 * barGrow)
                 }
                 if from == .smartScreen || to == .smartScreen {
                     let smartP = 1 - p
-                    dot(lerp(13.5, 15.3, smartP), lerp(11.8, 14.3, smartP), lerp(0.8, 2.5, smartP), smartP)
+                    dot(lerp(13.5, 15.2, smartP), lerp(11.8, 14.35, smartP), lerp(0.8, 2.55, smartP), smartP)
                 }
             } else if isCore(from) && isCore(to) {
                 drawCoreMark(alpha: 1.0)
                 let smartT = to == .smartScreen ? t : (1 - t)
-                dot(15.3, 14.3, lerp(0.6, 2.5, smartT), smartT)
+                dot(15.2, 14.35, lerp(0.6, 2.55, smartT), smartT)
             } else if (from == .off && isCore(to)) || (isCore(from) && to == .off) || (from == .loading && isCore(to)) {
                 if from == .loading {
-                    let loadFade = max(0, 1 - clamped / 0.4)
-                    drawState(.loading, alphaScale: loadFade)
+                    drawState(.loading, alphaScale: max(0, 1 - clamped / 0.4))
                 }
                 let w = to == .off ? (1 - t) : t
                 let minA: CGFloat = from == .loading ? 0.0 : 0.30
                 let cT = min(1, w / 0.55)
-                tiltedCapsule(center: NSPoint(x: 4.8, y: 9.0),
-                              width: lerp(minA > 0 ? 1.85 : 1.3, 1.9, cT),
-                              height: lerp(minA > 0 ? 10.0 : 5.4, 10.8, cT),
+                tiltedCapsule(center: NSPoint(x: 4.65, y: 9.0),
+                              width: lerp(minA > 0 ? 1.95 : 1.35, 2.05, cT),
+                              height: lerp(minA > 0 ? 10.5 : 5.6, 11.4, cT),
                               angle: 15,
                               alpha: lerp(minA, 1.0, cT))
-                let ts = 2.1 * tan15, bs = -2.1 * tan15
-                for d in abTopDots {
+                for d in dots {
                     let colT = min(1, max(0, (w - CGFloat(d.col) * 0.14) / 0.58))
-                    dot(d.x + ts, 11.1, lerp(minA > 0 ? 1.85 : 1.1, 2.15, colT), lerp(minA * d.alpha, d.alpha, colT))
-                }
-                for d in abBottomDots {
-                    let colT = min(1, max(0, (w - CGFloat(d.col) * 0.14) / 0.58))
-                    dot(d.x + bs, 6.9, lerp(minA > 0 ? 1.85 : 1.1, 2.15, colT), lerp(minA * d.alpha, d.alpha, colT))
+                    dot(d.x, d.y, lerp(minA > 0 ? 1.95 : 1.15, 2.30, colT), lerp(minA * d.alpha, d.alpha, colT))
                 }
                 if to == .smartScreen || from == .smartScreen {
                     let sT = min(1, max(0, (w - 0.35) / 0.65))
-                    dot(15.3, 14.3, lerp(0.8, 2.5, sT), sT)
+                    dot(15.2, 14.35, lerp(0.8, 2.55, sT), sT)
                 }
             } else {
                 drawState(from, alphaScale: 1 - t)
@@ -216,27 +211,16 @@ enum MenuBarIcon {
     static func acceptPulseImage(for state: State, progress rawT: CGFloat) -> NSImage {
         let p = min(max(rawT, 0), 1)
         guard (state == .active || state == .smartScreen), p > 0.001, p < 0.999 else { return image(for: state) }
-        let tan15 = CGFloat(tan(15 * CGFloat.pi / 180))
         return makeTemplateImage {
-            let ts = 2.1 * tan15, bs = -2.1 * tan15
-            let cursorNudge = 0.50 * sin(.pi * p) * (1 - 0.5 * p)
-            tiltedCapsule(center: NSPoint(x: 4.8 + cursorNudge, y: 9.0), width: 1.9, height: 10.8, angle: 15, alpha: 1.0)
+            let cursorNudge = 0.52 * sin(.pi * p) * (1 - 0.5 * p)
+            tiltedCapsule(center: NSPoint(x: 4.65 + cursorNudge, y: 9.0), width: 2.05, height: 11.4, angle: 15, alpha: 1.0)
             let peaks: [CGFloat] = [0.22, 0.50, 0.78]
-            let colWave: (Int) -> CGFloat = { col in
-                let dist = abs(p - peaks[col]) / 0.34
-                return dist < 1 ? 0.5 * (1 + cos(.pi * dist)) : 0
+            for d in dots {
+                let dist = abs(p - peaks[d.col]) / 0.34
+                let w = dist < 1 ? 0.5 * (1 + cos(.pi * dist)) : 0
+                dot(d.x, d.y, 2.30 + 0.48 * w, min(1.0, d.alpha + (1.0 - d.alpha) * 0.75 * w))
             }
-            for d in abTopDots {
-                let w = colWave(d.col)
-                dot(d.x + ts, 11.1, 2.15 + 0.45 * w, min(1.0, d.alpha + (1.0 - d.alpha) * 0.75 * w))
-            }
-            for d in abBottomDots {
-                let w = colWave(d.col)
-                dot(d.x + bs, 6.9, 2.15 + 0.45 * w, min(1.0, d.alpha + (1.0 - d.alpha) * 0.75 * w))
-            }
-            if state == .smartScreen {
-                dot(15.3, 14.3, 2.5, 1.0)
-            }
+            if state == .smartScreen { dot(15.2, 14.35, 2.55, 1.0) }
         }
     }
 
@@ -244,30 +228,30 @@ enum MenuBarIcon {
     static func animatedImage(for state: State, phase: CGFloat, level: CGFloat = 0) -> NSImage {
         switch state {
         case .loading:
-            let xs: [CGFloat] = [5.0, 9.0, 13.0]
+            let xs: [CGFloat] = [4.8, 9.0, 13.2]
             return makeTemplateImage {
                 for (i, x) in xs.enumerated() {
                     let s = sin(phase - CGFloat(i) * 1.15)
                     let wave = 0.5 + 0.5 * s
-                    dot(x, 9.0 + 0.65 * s, 2.05 + 0.55 * wave, 0.28 + 0.68 * wave)
+                    dot(x, 9.0 + 0.68 * s, 2.15 + 0.58 * wave, 0.28 + 0.68 * wave)
                 }
             }
         case .readingScreen:
             return makeTemplateImage {
                 let b = 0.5 + 0.5 * sin(phase)
-                drawViewfinder(inset: 0.65 * b, dotDiameter: 2.5 + 0.75 * b, alphaScale: 0.85 + 0.15 * b)
+                drawViewfinder(inset: 0.68 * b, dotDiameter: 2.6 + 0.75 * b, alphaScale: 0.85 + 0.15 * b)
             }
         case .reading:
             let clamped = min(max(level, 0), 1)
             return makeTemplateImage {
                 let specs: [(x: CGFloat, baseH: CGFloat, baseA: CGFloat)] = [
-                    (4.0, 4.6, 0.58), (7.3, 8.8, 0.96), (10.7, 6.8, 0.86), (14.0, 4.0, 0.52)
+                    (3.9, 4.8, 0.58), (7.3, 9.2, 0.96), (10.7, 7.2, 0.86), (14.1, 4.2, 0.52)
                 ]
                 for (i, spec) in specs.enumerated() {
                     let osc = 0.5 + 0.5 * sin(phase * 1.4 + CGFloat(i) * 1.35)
-                    let h = min(12.4, max(3.6, spec.baseH + (1.2 + clamped * 3.8) * (osc - 0.35)))
+                    let h = min(12.8, max(3.8, spec.baseH + (1.2 + clamped * 4.0) * (osc - 0.35)))
                     let a = min(1.0, spec.baseA + clamped * 0.25 * osc)
-                    tiltedCapsule(center: NSPoint(x: spec.x, y: 9.0), width: 1.75, height: h, angle: 0, alpha: a)
+                    tiltedCapsule(center: NSPoint(x: spec.x, y: 9.0), width: 1.85, height: h, alpha: a)
                 }
             }
         default:
@@ -282,7 +266,6 @@ final class MenuBarAnimator {
     private weak var button: NSStatusBarButton?
     private(set) var currentState: MenuBarIcon.State?
     private var timer: Timer?
-    private var isPulsingAccept = false
     private var phase: CGFloat = 0
     private var smoothedLevel: CGFloat = 0
 
@@ -307,21 +290,15 @@ final class MenuBarAnimator {
     func stop() {
         timer?.invalidate()
         timer = nil
-        isPulsingAccept = false
     }
 
     func setState(_ state: MenuBarIcon.State, dimmed: Bool,
                   reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
         button?.appearsDisabled = dimmed
-        if reduceMotion {
+        if reduceMotion || currentState == nil {
+            let first = currentState == nil
             currentState = state
-            stop()
-            button?.image = MenuBarIcon.image(for: state)
-            return
-        }
-        guard let old = currentState else {
-            currentState = state
-            if Self.isLooping(state) {
+            if !reduceMotion && first && Self.isLooping(state) {
                 startLoop(for: state)
             } else {
                 stop()
@@ -329,7 +306,7 @@ final class MenuBarAnimator {
             }
             return
         }
-        if old == state {
+        guard let old = currentState, old != state else {
             if Self.isLooping(state) {
                 if timer == nil { startLoop(for: state) }
             } else if timer == nil {
@@ -341,54 +318,32 @@ final class MenuBarAnimator {
         if Self.isLooping(state) {
             startLoop(for: state)
         } else {
-            startTransition(from: old, to: state)
+            runSteps(interval: 0.0275, target: state) { MenuBarIcon.transitionImage(from: old, to: state, progress: $0) }
         }
     }
 
     func pulseAccept(reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
-        guard let state = currentState, (state == .active || state == .smartScreen), !reduceMotion, button != nil else { return }
-        stop()
-        isPulsingAccept = true
-        var step = 0
-        let total = 8
-        let t = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.isPulsingAccept, self.currentState == state else {
-                    self?.stop()
-                    return
-                }
-                step += 1
-                let progress = CGFloat(step) / CGFloat(total)
-                if step >= total {
-                    self.stop()
-                    self.button?.image = MenuBarIcon.image(for: state)
-                } else {
-                    self.button?.image = MenuBarIcon.acceptPulseImage(for: state, progress: progress)
-                }
-            }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
+        guard let state = currentState, (state == .active || state == .smartScreen), !reduceMotion else { return }
+        runSteps(interval: 0.03, target: state) { MenuBarIcon.acceptPulseImage(for: state, progress: $0) }
     }
 
-    private func startTransition(from: MenuBarIcon.State, to: MenuBarIcon.State) {
+    private func runSteps(interval: TimeInterval, target: MenuBarIcon.State, render: @escaping (CGFloat) -> NSImage) {
         stop()
         guard button != nil else { return }
         var step = 0
         let total = 8
-        let t = Timer(timeInterval: 0.0275, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.currentState == to else {
+                guard let self, self.currentState == target else {
                     self?.stop()
                     return
                 }
                 step += 1
-                let progress = CGFloat(step) / CGFloat(total)
                 if step >= total {
                     self.stop()
-                    self.button?.image = MenuBarIcon.image(for: to)
+                    self.button?.image = MenuBarIcon.image(for: target)
                 } else {
-                    self.button?.image = MenuBarIcon.transitionImage(from: from, to: to, progress: progress)
+                    self.button?.image = render(CGFloat(step) / CGFloat(total))
                 }
             }
         }
