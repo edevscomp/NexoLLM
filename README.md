@@ -7,7 +7,7 @@
   <a href="#shortcuts">Shortcuts</a>
 </p>
 
-<p align="center"><img src="showcase/assets/live.gif" width="760" alt="NexoLLM suggesting words inline as you type, accepting with Tab and choosing alternatives"></p>
+<p align="center"><img src="showcase/assets/live.png" width="760" alt="NexoLLM showing word alternatives at the caret with ⌥Tab"></p>
 
 ## What it does
 
@@ -79,11 +79,9 @@ On first launch, the interactive tour helps pick and download a local model suit
 
 Every shortcut can be customized in **Settings → Input**.
 
-## Status, Contributors & License
+## Status & License
 
 NexoLLM is in active early-stage development — built for dependable daily writing, though occasional rough edges may still appear. Bug reports and pull requests are welcome in [Issues](https://github.com/edevscomp/NexoLLM/issues).
-
-**Contributors:** [**EdevS**](https://github.com/edevscomp) · **Claude** (Anthropic) · **Gemini** (Google DeepMind)
 
 [Privacy Policy](PRIVACY.md) · [Security & Ed25519 Verification](SECURITY.md) · [Audio Notice](LEGAL_AUDIO_PLUGIN.md) · [Changelog](CHANGELOG.md) · [GNU GPL v3.0](LICENSE) · [Trademarks](TRADEMARKS.md)
 

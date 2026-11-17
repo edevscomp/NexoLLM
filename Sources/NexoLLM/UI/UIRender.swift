@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// `NexoLLM --render-ui <dir> [dark|light]`: renders every Settings pane, the floating overlays, README glass
-/// panels and (when `NEXO_DEMO_FRAMES` is set) the animated live loop frames to 2x PNG from inside the process.
+/// panels to 2x PNG from inside the process.
 enum UIRender {
     static func run(outDir: String, dark: Bool) {
         let app = NSApplication.shared
@@ -43,29 +43,6 @@ enum UIRender {
         AppStatus.shared.engine = "Ready · gemma-4-E4B.i1-Q4_K_M.gguf"
         AppStatus.shared.modelReady = true
         let theme = dark ? "dark" : "light"
-
-        // If NEXO_DEMO_ONLY=1, render only the 90-frame live animation + frosted panels for scripts/readme-media.sh
-        if let nStr = ProcessInfo.processInfo.environment["NEXO_DEMO_FRAMES"], let total = Int(nStr), total > 0 {
-            let demoSize = NSSize(width: 760, height: 356)
-            let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -6000, y: -6000), size: demoSize),
-                                  styleMask: [.borderless], backing: .buffered, defer: false)
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            let host = NSHostingView(rootView: LiveDemoScene(frame: 0).frame(width: demoSize.width, height: demoSize.height))
-            window.contentView = host
-            window.orderFrontRegardless()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.35))
-            for i in 0..<total {
-                host.rootView = LiveDemoScene(frame: i).frame(width: demoSize.width, height: demoSize.height)
-                RunLoop.main.run(until: Date().addingTimeInterval(0.03))
-                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
-                    host.cacheDisplay(in: host.bounds, to: rep)
-                    let name = String(format: "%@/demo-%03d.png", outDir, i)
-                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: name))
-                }
-            }
-            window.orderOut(nil)
-        }
 
         // Frosted RGBA panels for wallpaper compositing (scripts/readme_media.py)
         render(FrostedPanelSurface(title: "Mail — Launch plan, final draft", badge: "Tab · next word") {

@@ -352,6 +352,8 @@ final class AudioContext: ObservableObject {
     @Published private(set) var transcript = ""
     @Published private(set) var inputLevel: Float = 0
     @Published private(set) var packetCount: Int = 0
+    /// Always-fresh mic level for the menu bar bars; plain var so it never wakes SwiftUI.
+    private(set) var meterLevel: Float = 0
     /// "Auto · it" / "en" for the badge.
     @Published private(set) var recognizerLocale: String = ""
     @Published private(set) var lastHeardAt: Date? = nil
@@ -645,9 +647,10 @@ final class AudioContext: ObservableObject {
 
     fileprivate func publishLevel(_ level: Float) {
         DispatchQueue.main.async {
+            self.meterLevel = max(self.meterLevel * 0.45, level)
             guard NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) else { return }
             self.packetCount += 1
-            self.inputLevel = max(self.inputLevel * 0.45, level)
+            self.inputLevel = self.meterLevel
         }
     }
 
@@ -751,7 +754,7 @@ final class AudioContext: ObservableObject {
         finals = []
         busy = false
         whisper.unload()
-        inputLevel = 0
+        inputLevel = 0; meterLevel = 0
         let hadText = !transcript.isEmpty
         committed = ""; micPartial = ""; sysPartial = ""; transcript = ""; lastHeardAt = nil
         if isListening || hadText { isListening = false; notify() }

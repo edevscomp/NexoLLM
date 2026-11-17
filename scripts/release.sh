@@ -31,7 +31,7 @@ publish_source() {
     else
         git -C "$WORK" -c user.name="$(git config user.name)" -c user.email="$(git config user.email)" \
             commit --quiet -m "NexoLLM $VERSION" \
-            -m $'Co-authored-by: Claude <noreply@anthropic.com>\nCo-authored-by: gemini-code-assist[bot] <176961590+gemini-code-assist[bot]@users.noreply.github.com>'
+            -m "Co-authored-by: Claude <noreply@anthropic.com>"
         echo "Committed source snapshot for $VERSION."
     fi
     git -C "$WORK" push --quiet -u origin main

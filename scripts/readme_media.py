@@ -81,33 +81,13 @@ def load_rgba(name: str) -> Image.Image:
     return Image.open(render_dir / name).convert("RGBA")
 
 
-# 1. Animated hero loop: `live.gif` (15 fps, shared palette with zero dither so text stays razor sharp)
-demo_frames = sorted(render_dir.glob("demo-*.png"))
-if len(demo_frames) > 1:
-    first = Image.open(demo_frames[0]).convert("RGBA")
-    pad_x, pad_y = 110, 96
-    base = wallpaper(first.width + pad_x * 2, first.height + pad_y * 2)
-    shots: list[Image.Image] = []
-    for path in demo_frames:
-        shot = base.copy()
-        place(shot, Image.open(path).convert("RGBA"), pad_x, pad_y, radius=30, glass_blend=0.62)
-        shots.append(shot.resize((shot.width // 2, shot.height // 2), Image.LANCZOS))
-    # Build a 255-color MEDIANCUT palette (leaving index 255 for GIF89a transparency) from key states
-    sample_indices = [0, min(18, len(shots) - 1), min(42, len(shots) - 1)]
-    strip = Image.new("RGB", (shots[0].width, shots[0].height * len(sample_indices)))
-    for i, idx in enumerate(sample_indices):
-        strip.paste(shots[idx], (0, i * shots[0].height))
-    palette = strip.quantize(colors=255, method=Image.MEDIANCUT, dither=Image.NONE)
-    stills = [shot.quantize(palette=palette, dither=Image.NONE) for shot in shots]
-    stills[0].save(
-        out_dir / "live.gif",
-        save_all=True,
-        append_images=stills[1:],
-        duration=60,
-        loop=0,
-        optimize=False,
-    )
-    print(f"Wrote {out_dir / 'live.gif'} ({len(stills)} frames)")
+# 1. `live.png`: static hero — inline ghost suggestion with the ⌥Tab alternatives popover
+live = load_rgba("glass-alternatives-dark.png")
+pad_x, pad_y = 110, 96
+live_canvas = wallpaper(live.width + pad_x * 2, live.height + pad_y * 2)
+place(live_canvas, live, pad_x, pad_y, radius=30, glass_blend=0.62)
+live_canvas.resize((live_canvas.width // 2, live_canvas.height // 2), Image.LANCZOS).save(out_dir / "live.png", optimize=True)
+print(f"Wrote {out_dir / 'live.png'}")
 
 # 2. `overlays.png`: Bento showcase of NexoLLM's 4 floating surfaces on one atmospheric wallpaper
 hero = load_rgba("glass-hero-dark.png")

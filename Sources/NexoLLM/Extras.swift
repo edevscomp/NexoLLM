@@ -355,7 +355,7 @@ final class MenuBarAnimator {
         stop()
         guard button != nil else { return }
         let interval: TimeInterval = state == .readingScreen ? (1.0 / 15.0) : (1.0 / 12.0)
-        smoothedLevel = CGFloat(AudioContext.shared.inputLevel)
+        smoothedLevel = CGFloat(AudioContext.shared.meterLevel)
         button?.image = MenuBarIcon.animatedImage(for: state, phase: phase, level: smoothedLevel)
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -366,7 +366,7 @@ final class MenuBarAnimator {
                 self.phase += 0.34
                 if self.phase > .pi * 200 { self.phase.formTruncatingRemainder(dividingBy: .pi * 2) }
                 if cur == .reading {
-                    let live = CGFloat(AudioContext.shared.inputLevel)
+                    let live = CGFloat(AudioContext.shared.meterLevel)
                     self.smoothedLevel = self.smoothedLevel * 0.55 + live * 0.45
                 }
                 self.button?.image = MenuBarIcon.animatedImage(for: cur, phase: self.phase, level: self.smoothedLevel)
