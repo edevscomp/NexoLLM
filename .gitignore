@@ -3,6 +3,7 @@
 build/
 dist/
 .showcase-repo/
+.tap-repo/
 .swiftpm/
 DerivedData/
 *.xcodeproj/xcuserdata/

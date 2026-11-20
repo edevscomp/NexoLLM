@@ -7,7 +7,7 @@
   <a href="#shortcuts">Shortcuts</a>
 </p>
 
-<p align="center"><img src="showcase/assets/live.png" width="760" alt="NexoLLM showing word alternatives at the caret with ⌥Tab"></p>
+<p align="center"><img src="showcase/assets/live.png" width="760" alt="NexoLLM suggesting the rest of a sentence in grey after the cursor, accepted with Tab"></p>
 
 ## What it does
 
@@ -57,10 +57,25 @@ The **Insights** view tracks words accepted with <kbd>Tab</kbd> and <kbd>⇧Tab<
 
 ## Install
 
-Download the latest signed release from [**GitHub Releases**](https://github.com/edevscomp/NexoLLM/releases/latest):
+**Homebrew (terminal):**
+
+```sh
+brew install --cask edevscomp/nexollm/nexollm
+```
+
+| | |
+| :--- | :--- |
+| Open | `open -a NexoLLM` |
+| Update | `brew upgrade --cask nexollm` |
+| Uninstall | `brew uninstall --cask nexollm` |
+| Uninstall and delete all local data | `brew uninstall --zap --cask nexollm` |
+
+**Or download the installer** from [**GitHub Releases**](https://github.com/edevscomp/NexoLLM/releases/latest):
 
 - **Desktop Installer (`.dmg`)** — download [`NexoLLM-macos.dmg`](https://github.com/edevscomp/NexoLLM/releases/latest/download/NexoLLM-macos.dmg), drag **NexoLLM** to **Applications**, and grant Accessibility access when prompted.
 - **Windows & Linux** — *Work in progress (currently in active development).*
+
+NexoLLM is not notarized yet, so the very first launch is blocked: open **System Settings → Privacy & Security** and click **Open Anyway** once. Every release is still signed with NexoLLM's own Ed25519 key — see [SECURITY.md](SECURITY.md) to verify it.
 
 On first launch, the interactive tour helps pick and download a local model suited to your hardware. Prefer building from source? See [docs/BUILDING.md](docs/BUILDING.md).
 

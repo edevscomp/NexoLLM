@@ -4,6 +4,15 @@ Every release of NexoLLM, newest first. Versions follow [Semantic Versioning](ht
 NexoLLM is in early-stage development: until 1.0 a minor version (0.x.0) can refine behavior, and a patch (0.x.y) only fixes things.
 The build number in parentheses grows with every commit.
 
+## [0.9.3] - 2026-11-20
+
+### Homebrew, no more system popups & security guard rails
+- Install, update and remove NexoLLM from the terminal with Homebrew: `brew install --cask edevscomp/nexollm/nexollm`, `brew upgrade --cask nexollm`, `brew uninstall --zap --cask nexollm`.
+- Fixed the system's word-completion box still appearing next to NexoLLM's suggestions: turning off system predictions now also disables text completion, and apps that are already open drop the system box immediately instead of after a restart. Settings turned off in earlier versions are completed automatically on launch.
+- Larger, easier-to-read menu bar icon (20 pt), and its voice bars now follow the microphone level even with Settings closed.
+- Updates are accepted only from NexoLLM's own GitHub releases, and a new automated security suite blocks insecure links, shell commands, hard-coded secrets, extra app permissions and unsigned updates from ever shipping.
+- The README now shows a static screenshot instead of a heavy animation.
+
 ## [0.9.2] - 2026-11-14
 
 ### Minimalist identity, fluid menu bar animations & Tab completion fixes

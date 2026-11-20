@@ -81,8 +81,8 @@ def load_rgba(name: str) -> Image.Image:
     return Image.open(render_dir / name).convert("RGBA")
 
 
-# 1. `live.png`: static hero — inline ghost suggestion with the ⌥Tab alternatives popover
-live = load_rgba("glass-alternatives-dark.png")
+# 1. `live.png`: static hero — the grey inline suggestion after the cursor, accepted with Tab
+live = load_rgba("glass-hero-dark.png")
 pad_x, pad_y = 110, 96
 live_canvas = wallpaper(live.width + pad_x * 2, live.height + pad_y * 2)
 place(live_canvas, live, pad_x, pad_y, radius=30, glass_blend=0.62)
