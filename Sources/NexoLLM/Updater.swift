@@ -146,9 +146,11 @@ final class Updater: ObservableObject {
         return Release(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), dmg: dmg.1, signature: sig)
     }
 
-    /// Updates are downloaded only over HTTPS from GitHub's own release hosts.
+    /// Updates are downloaded only over HTTPS from GitHub's own release hosts; on github.com itself, only from
+    /// NexoLLM's releases (the CDN hosts are where those links redirect).
     static func isTrustedDownload(_ url: URL) -> Bool {
-        SecureNet.isAllowed(url, hosts: SecureNet.githubHosts.subtracting(["api.github.com"]))
+        guard SecureNet.isAllowed(url, hosts: SecureNet.githubHosts.subtracting(["api.github.com"])) else { return false }
+        return url.host?.lowercased() != "github.com" || url.path.hasPrefix("/edevscomp/NexoLLM/releases/download/")
     }
 
     /// "0.10.0" > "0.9.2". Non-numeric versions ("dev") are never older than anything.

@@ -168,7 +168,12 @@ final class CompletionController {
         TempCache.controller = self
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.invalidate(); self?.list.hide(); self?.quickMenu.hide(); self?.statusChanged() }
+        ) { [weak self] note in
+            self?.invalidate(); self?.list.hide(); self?.quickMenu.hide(); self?.statusChanged()
+            if let id = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier {
+                SystemTextPrefs.clearOverrides(for: id)
+            }
+        }
         focus.onChange = { [weak self] in self?.pollFocus() }
         // Self-healing event tap: re-check it whenever the system may have broken it. Event-driven, no polling.
         let ws = NSWorkspace.shared.notificationCenter

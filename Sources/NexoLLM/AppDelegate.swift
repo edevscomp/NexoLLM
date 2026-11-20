@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         CrashReporter.shared.install()    // before Log.reset() so a previous crash report keeps the log tail
         Log.reset()
         _ = NetworkMonitor.shared
+        SystemTextPrefs.reconcileOnLaunch()
 
         // One-time migrations before loading the model.
         if !UserDefaults.standard.bool(forKey: "migrated.screenContext") {

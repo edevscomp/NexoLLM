@@ -112,10 +112,10 @@ final class WritingQualityTests: XCTestCase {
     }
 
     func testReleaseParsingPrefersStableDMG() {
-        let json = #"{"tag_name":"v0.4.0","assets":[{"name":"NexoLLM-0.4.0.zip","browser_download_url":"https://github.com/x/a.zip"},{"name":"NexoLLM-0.4.0.dmg","browser_download_url":"https://github.com/x/v.dmg"},{"name":"NexoLLM.dmg","browser_download_url":"https://github.com/x/s.dmg"}]}"#
+        let json = #"{"tag_name":"v0.4.0","assets":[{"name":"NexoLLM-0.4.0.zip","browser_download_url":"https://github.com/edevscomp/NexoLLM/releases/download/v0.4.0/a.zip"},{"name":"NexoLLM-0.4.0.dmg","browser_download_url":"https://github.com/edevscomp/NexoLLM/releases/download/v0.4.0/v.dmg"},{"name":"NexoLLM.dmg","browser_download_url":"https://github.com/edevscomp/NexoLLM/releases/download/v0.4.0/s.dmg"}]}"#
         let r = Updater.parse(Data(json.utf8))
         XCTAssertEqual(r?.version, "0.4.0")
-        XCTAssertEqual(r?.dmg.absoluteString, "https://github.com/x/s.dmg")
+        XCTAssertEqual(r?.dmg.absoluteString, "https://github.com/edevscomp/NexoLLM/releases/download/v0.4.0/s.dmg")
         XCTAssertNil(Updater.parse(Data(#"{"tag_name":"v1.0.0","assets":[]}"#.utf8)))
         // Downloads only over HTTPS from GitHub.
         XCTAssertNil(Updater.parse(Data(#"{"tag_name":"v9.0.0","assets":[{"name":"NexoLLM.dmg","browser_download_url":"https://evil.example/s.dmg"}]}"#.utf8)))
