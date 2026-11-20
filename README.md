@@ -66,9 +66,9 @@ brew install --cask edevscomp/nexollm/nexollm
 | | |
 | :--- | :--- |
 | Open | `open -a NexoLLM` |
-| Update | `brew upgrade --cask nexollm` |
-| Uninstall | `brew uninstall --cask nexollm` |
-| Uninstall and delete all local data | `brew uninstall --zap --cask nexollm` |
+| Update | `brew upgrade --cask edevscomp/nexollm/nexollm` |
+| Uninstall | `brew uninstall --cask edevscomp/nexollm/nexollm` |
+| Uninstall and delete all local data | `brew uninstall --zap --cask edevscomp/nexollm/nexollm` |
 
 **Or download the installer** from [**GitHub Releases**](https://github.com/edevscomp/NexoLLM/releases/latest):
 
